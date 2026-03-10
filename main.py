@@ -163,27 +163,31 @@ def main():
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="")
         
-        prompt = f"""
+prompt = f"""
         당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다. 
-        매우 보수적인 잣대로 '활용도 분석'을 수행하십시오. 
-        ❗주의: 텍스트가 끊기지 않도록 각 항목을 500자 이내로 상세하게 작성하십시오.
+        매우 보수적인 잣대로 '활용도 분석'을 수행하십시오.
 
         [491개 자격 사전] {QNET_CERTS}
         [법령명] {law['법령명']}
         [내용] {law['원본']}
 
         [판정 가이드라인]
-        1. 분류: 자격증 소지자의 선임, 가점, 채용에 직접적 변화가 있다면 '중요', 아니면 '일반'
-        2. 활용도_구분: [대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소] 중 택 1
-        3. 직접적 명시가 없으면 무조건 '변동 없음'
+        1. 분류: 자격증 소지자의 의무 선임, 가점, 채용 요건에 직접적 변화가 있다면 '중요', 아니면 '일반'
+        2. 활용도_구분: [대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소] 중 반드시 하나 선택
+        3. 직접적 명시가 없는 추론은 모두 '변동 없음' 처리할 것.
+        
+        [🚨 JSON 작성 절대 규칙 (위반 시 시스템 붕괴됨)]
+        1. "활용도_분석"에 500자 상세 보고서를 작성하되, **절대 실제 줄바꿈(Enter)을 사용하지 마십시오.** 줄바꿈이 필요하면 반드시 '\\n' 기호를 사용하십시오.
+        2. 문자열 내용 안에 큰따옴표(")를 쓰지 마시고, 필요하면 작은따옴표(')로 대체하십시오.
+        3. ```json 같은 마크다운 기호나 설명 문구를 절대 넣지 말고, 오직 {{ 로 시작해서 }} 로 끝나는 순수 JSON만 출력하십시오.
 
-        [출력 JSON] - 아래 중괄호 포맷만 정확히 출력할 것.
+        [출력 JSON]
         {{
             "분류": "중요 또는 일반",
-            "요약": "법령 핵심 요약을 500자 이내로 상세하게 작성 (쌍따옴표 및 줄바꿈 절대 금지)",
+            "요약": "법령 핵심 요약",
             "종목": "매칭된 자격증 명칭",
             "활용도_구분": "5단계 중 선택",
-            "활용도_분석": "판단 근거를 500자 이내로 명확하고 상세하게 작성 (쌍따옴표 및 줄바꿈 절대 금지)"
+            "활용도_분석": "500자 상세 보고서 (줄바꿈 없이 한 줄로 길게 작성)"
         }}
         """
         try:
@@ -191,23 +195,24 @@ def main():
                 prompt, 
                 generation_config={
                     "response_mime_type": "application/json",
-                    "max_output_tokens": 8192,
-                    "temperature": 0.1
+                    "max_output_tokens": 8192
                 }
             )
             raw_text = response.text.strip()
             
-            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
-            if match:
-                clean_json_str = match.group(0)
-            else:
-                match_list = re.search(r'\[.*\]', raw_text, re.DOTALL)
-                if match_list:
-                    clean_json_str = match_list.group(0)
-                else:
-                    clean_json_str = raw_text
-
-            data = json.loads(clean_json_str)
+            # [V17 패치] 제미나이 헛소리 필터링 (JSON 정수기)
+            # 1. 마크다운(```json) 찌꺼기가 붙어오면 강제로 벗겨냄
+            if raw_text.startswith("```"):
+                raw_text = raw_text.strip("`").replace("json", "", 1).strip()
+                
+            # 2. 진짜 { } 괄호 안쪽만 수술해서 빼냄 (Extra data 에러 원천 차단)
+            start_idx = raw_text.find('{')
+            end_idx = raw_text.rfind('}')
+            if start_idx != -1 and end_idx != -1:
+                raw_text = raw_text[start_idx:end_idx+1]
+            
+            # 3. 만약 진짜 줄바꿈이 숨어있더라도 에러 안 나게 눈감아줌 (strict=False)
+            data = json.loads(raw_text, strict=False)
             
             if isinstance(data, list): 
                 data = data[0] if len(data) > 0 else {}
@@ -226,6 +231,8 @@ def main():
             
         except Exception as e: 
             print(f"⚠️ [에러 패스] 상세 원인: {e}")
+            # 에러가 난 텍스트가 대체 뭐였는지 디버깅용으로 50자만 출력해보기
+            print(f"   [디버그용 원본 찌꺼기]: {raw_text[:50]}...")
         
     if important_laws:
         df_detail = pd.DataFrame(important_laws)
