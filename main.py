@@ -36,7 +36,7 @@ FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel('gemini-2.5-flash-lite') 
+model = genai.GenerativeModel('gemini-2.5-flash') 
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 CURRENT_FOLDER = os.path.dirname(os.path.abspath(__file__))
@@ -231,8 +231,8 @@ def send_email_with_excel(filename, total_count, important_count):
 def main():
     print(f"\n[🚀 일일 자동화 모드] 가동 시작...")
     
-    # 🚨 이 간판이 뜨면 무조건 1.5 모델 장착 완료!
-    print(f"\n🚨 [V7 최종 완성본] 모델 교체 완료! (gemini-1.5-flash / 15초 쾌속 모드) 🚨")
+    # 🚨 이 간판이 뜨면 무조건 2.5 모델 장착 완료!
+    print(f"\n🚨 [V7 최종 완성본] 모델 교체 완료! (gemini-2.5-flash / 15초 쾌속 모드) 🚨")
     
     laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
     
