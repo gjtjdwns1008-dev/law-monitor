@@ -18,13 +18,13 @@ from openpyxl.styles import Alignment, PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. 환경 변수 세팅 (GitHub Secrets에서 불러옴)
+# 1. 환경 변수 세팅
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL") # 🚨 네이버 이메일 주소
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD") # 🚨 네이버 앱 비밀번호
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL") # 🚨 수신자 (콤마로 구분)
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 # ==========================================
 # 2. 한국 시간(KST) 세팅
@@ -47,7 +47,7 @@ session.mount('http://', adapter)
 session.mount('https://', adapter)
 
 # ==========================================
-# 3. 최신 국가기술자격 491개 마스터 도감 (우리공단 전용)
+# 3. 최신 국가기술자격 491개 마스터 도감
 # ==========================================
 QNET_CERTS = """
 [사업관리] 공공조달관리사
@@ -189,8 +189,6 @@ def send_email_with_excel(filename, total_count, important_count):
     print("\n📧 이메일 발송을 준비합니다...")
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
-    
-    # 🚨 RECEIVER_EMAIL에 콤마(,)가 포함되어 있어도 정상 작동합니다!
     msg['To'] = RECEIVER_EMAIL 
     msg['Subject'] = f"🤖 [일일 모니터링] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
 
@@ -219,15 +217,11 @@ def send_email_with_excel(filename, total_count, important_count):
     msg.attach(part)
 
     try:
-        # 🚨 네이버 SMTP 주소 완벽 적용
         server = smtplib.SMTP('smtp.naver.com', 587)
         server.starttls()
         server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-        
-        # 다중 발송 처리
         receiver_list = [email.strip() for email in RECEIVER_EMAIL.split(',')]
         server.sendmail(SENDER_EMAIL, receiver_list, msg.as_string())
-        
         server.quit()
         print(f"✅ 이메일 발송 성공! 사내 메일함을 확인하세요. (수신자: {RECEIVER_EMAIL})")
     except Exception as e:
@@ -235,6 +229,10 @@ def send_email_with_excel(filename, total_count, important_count):
 
 def main():
     print(f"\n[🚀 일일 자동화 모드] 가동 시작...")
+    
+    # 🚨🚨🚨 함정 수사용 핵심 간판! 이게 화면에 안 뜨면 깃허브가 고장난 겁니다! 🚨🚨🚨
+    print(f"\n🚨 [V6.5 최종 테스트] 60초 딜레이 시스템이 완벽하게 가동됩니다! 🚨")
+    
     laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
     
     filename = os.path.join(CURRENT_FOLDER, f"HRDKorea_Law_Report_{TARGET_DATE}.xlsx")
@@ -244,7 +242,7 @@ def main():
     if not laws:
         print("오늘은 새로 시행되는 전체 법령이 없습니다. (빈 보고서 발송 준비)")
     else:
-        print(f"\n🏎️ 제미나이(Gemini) 2.5 AI가 오늘 시행되는 {len(laws)}건의 법령을 심사합니다...")
+        print(f"🏎️ 제미나이(Gemini) 2.5 AI가 오늘 시행되는 {len(laws)}건의 법령을 심사합니다...")
         
         relation_keywords = ["자격", "기술", "면허", "기사", "기능", "안전", "환경", "폐기물", "시공", "관리", "검사"]
         
@@ -252,9 +250,9 @@ def main():
             if any(kw in law["법령명"] + law["주요 제·개정내용_원본"] for kw in relation_keywords):
                 relation_count += 1
 
-            print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... ", end="", flush=True)
+            print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... (60초 대기) ", end="", flush=True)
             
-            # 🚨 구글 무료 API의 분당 글자 수(TPM) 초과를 완벽하게 방어하는 60초 대기! (1분에 1개)
+            # 🚨 60초 휴식 타이머 (무조건 작동)
             time.sleep(60) 
             
             prompt = f"""
@@ -309,7 +307,6 @@ def main():
                 utility_impact = ai_data.get("활용도_분석", "분석 불가")
                 
             except Exception as e:
-                # 🚨 에러 발생 시 숨김 없이 그대로 출력하고 10초 대기 후 다음으로 넘어감
                 print(f"❌ [에러 발생] {e} (10초 후 다음 법령 진행)")
                 time.sleep(10)
                 continue 
