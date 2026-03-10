@@ -36,8 +36,7 @@ FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# 🚨 범인 검거 완료! 하루 1500번 쓸 수 있는 안정적인 1.5 모델로 교체! 🚨
-model = genai.GenerativeModel('gemini-1.5-flash') 
+model = genai.GenerativeModel('gemini-2.0-flash') 
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 CURRENT_FOLDER = os.path.dirname(os.path.abspath(__file__))
