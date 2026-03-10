@@ -6,7 +6,6 @@ import time
 import os
 import json
 import smtplib
-import re 
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -19,7 +18,7 @@ from openpyxl.styles import Alignment, PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. 환경 변수
+# 1. 환경 변수 (GitHub Secrets)
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -64,7 +63,11 @@ def get_todays_laws(api_key, target_date):
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
                 
-                if not response.text.strip() or response.status_code != 200:
+                # 빈 페이지(백지)를 받으면 조용히 다음으로 넘어가기
+                if not response.text.strip():
+                    break
+                    
+                if response.status_code != 200:
                     break
                     
                 root = ET.fromstring(response.text)
@@ -158,12 +161,12 @@ def main():
         return
     
     important_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V16 500자 상세 보고서) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V17) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="")
         
-prompt = f"""
+        prompt = f"""
         당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다. 
         매우 보수적인 잣대로 '활용도 분석'을 수행하십시오.
 
@@ -191,6 +194,7 @@ prompt = f"""
         }}
         """
         try:
+            # 답변이 끊기지 않도록 최대 길이(max_output_tokens)를 8,000자로 확 늘림!
             response = model.generate_content(
                 prompt, 
                 generation_config={
@@ -200,7 +204,7 @@ prompt = f"""
             )
             raw_text = response.text.strip()
             
-            # [V17 패치] 제미나이 헛소리 필터링 (JSON 정수기)
+            # [V17 핵심 패치] 제미나이 헛소리 필터링 (JSON 정수기)
             # 1. 마크다운(```json) 찌꺼기가 붙어오면 강제로 벗겨냄
             if raw_text.startswith("```"):
                 raw_text = raw_text.strip("`").replace("json", "", 1).strip()
