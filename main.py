@@ -6,6 +6,7 @@ import time
 import os
 import json
 import smtplib
+import re 
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -18,7 +19,7 @@ from openpyxl.styles import Alignment, PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. 환경 변수 (GitHub Secrets)
+# 1. 환경 변수
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -63,11 +64,7 @@ def get_todays_laws(api_key, target_date):
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
                 
-                # [V14 패치 1] 빈 페이지(백지)를 받으면 조용히 다음으로 넘어가기
-                if not response.text.strip():
-                    break
-                    
-                if response.status_code != 200:
+                if not response.text.strip() or response.status_code != 200:
                     break
                     
                 root = ET.fromstring(response.text)
@@ -161,45 +158,57 @@ def main():
         return
     
     important_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V14) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V16 500자 상세 보고서) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="")
         
         prompt = f"""
         당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다. 
-        매우 보수적인 잣대로 '활용도 분석'을 수행하십시오.
+        매우 보수적인 잣대로 '활용도 분석'을 수행하십시오. 
+        ❗주의: 텍스트가 끊기지 않도록 각 항목을 500자 이내로 상세하게 작성하십시오.
 
         [491개 자격 사전] {QNET_CERTS}
         [법령명] {law['법령명']}
         [내용] {law['원본']}
 
         [판정 가이드라인]
-        1. 분류: 자격증 소지자의 의무 선임, 가점, 채용 요건에 직접적 변화가 있다면 '중요', 아니면 '일반'
-        2. 활용도_구분: [대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소] 중 반드시 하나 선택
-        3. 직접적 명시가 없는 추론은 모두 '변동 없음' 처리할 것.
+        1. 분류: 자격증 소지자의 선임, 가점, 채용에 직접적 변화가 있다면 '중요', 아니면 '일반'
+        2. 활용도_구분: [대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소] 중 택 1
+        3. 직접적 명시가 없으면 무조건 '변동 없음'
 
-        [출력 JSON]
+        [출력 JSON] - 아래 중괄호 포맷만 정확히 출력할 것.
         {{
             "분류": "중요 또는 일반",
-            "요약": "법령 핵심 요약",
+            "요약": "법령 핵심 요약을 500자 이내로 상세하게 작성 (쌍따옴표 및 줄바꿈 절대 금지)",
             "종목": "매칭된 자격증 명칭",
             "활용도_구분": "5단계 중 선택",
-            "활용도_분석": "판단 근거"
+            "활용도_분석": "판단 근거를 500자 이내로 명확하고 상세하게 작성 (쌍따옴표 및 줄바꿈 절대 금지)"
         }}
         """
         try:
-            # [V14 패치 2] 답변이 끊기지 않도록 최대 길이(max_output_tokens)를 8,000자로 확 늘림!
             response = model.generate_content(
                 prompt, 
                 generation_config={
                     "response_mime_type": "application/json",
-                    "max_output_tokens": 8192
+                    "max_output_tokens": 8192,
+                    "temperature": 0.1
                 }
             )
             raw_text = response.text.strip()
             
-            data = json.loads(raw_text)
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if match:
+                clean_json_str = match.group(0)
+            else:
+                match_list = re.search(r'\[.*\]', raw_text, re.DOTALL)
+                if match_list:
+                    clean_json_str = match_list.group(0)
+                else:
+                    clean_json_str = raw_text
+
+            data = json.loads(clean_json_str)
+            
             if isinstance(data, list): 
                 data = data[0] if len(data) > 0 else {}
             
@@ -214,8 +223,9 @@ def main():
                 })
                 print("👉 [채택]")
             else: print("❌ [패스]")
+            
         except Exception as e: 
-            print("⚠️ [에러 패스] JSON 파싱 오류로 건너뜀")
+            print(f"⚠️ [에러 패스] 상세 원인: {e}")
         
     if important_laws:
         df_detail = pd.DataFrame(important_laws)
