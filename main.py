@@ -217,7 +217,7 @@ def send_email_with_excel(filename, total_count, important_count):
     msg.attach(part)
 
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP('smtp.naver.com', 587)
         server.starttls()
         server.login(SENDER_EMAIL, EMAIL_PASSWORD)
         server.send_message(msg)
