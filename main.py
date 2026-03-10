@@ -24,7 +24,7 @@ LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL") # 🚨 네이버 이메일 주소
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD") # 🚨 네이버 앱 비밀번호
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL") # 🚨 수신자 (콤마로 구분 시 다중 발송 가능)
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL") # 🚨 수신자 (콤마로 구분)
 
 # ==========================================
 # 2. 한국 시간(KST) 세팅
@@ -219,12 +219,12 @@ def send_email_with_excel(filename, total_count, important_count):
     msg.attach(part)
 
     try:
-        # 🚨 구글 gsmtp 차단 방어: 완벽한 네이버 SMTP 주소 적용!
+        # 🚨 네이버 SMTP 주소 완벽 적용
         server = smtplib.SMTP('smtp.naver.com', 587)
         server.starttls()
         server.login(SENDER_EMAIL, EMAIL_PASSWORD)
         
-        # 다중 발송 처리: RECEIVER_EMAIL이 콤마로 구분된 경우 리스트로 변환하여 발송
+        # 다중 발송 처리
         receiver_list = [email.strip() for email in RECEIVER_EMAIL.split(',')]
         server.sendmail(SENDER_EMAIL, receiver_list, msg.as_string())
         
@@ -254,8 +254,8 @@ def main():
 
             print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... ", end="", flush=True)
             
-            # 🚨 구글 무료 API의 분당 글자 수(TPM) 초과를 완벽하게 방어하는 30초 대기!
-            time.sleep(30) 
+            # 🚨 구글 무료 API의 분당 글자 수(TPM) 초과를 완벽하게 방어하는 60초 대기! (1분에 1개)
+            time.sleep(60) 
             
             prompt = f"""
             당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
@@ -309,7 +309,7 @@ def main():
                 utility_impact = ai_data.get("활용도_분석", "분석 불가")
                 
             except Exception as e:
-                # 🚨 에러가 발생하면 멈추지 않고 상세 사유를 명확히 출력한 뒤 10초 휴식 후 다음으로 넘어갑니다.
+                # 🚨 에러 발생 시 숨김 없이 그대로 출력하고 10초 대기 후 다음으로 넘어감
                 print(f"❌ [에러 발생] {e} (10초 후 다음 법령 진행)")
                 time.sleep(10)
                 continue 
