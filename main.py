@@ -35,7 +35,9 @@ TARGET_DATE = today.strftime("%Y%m%d")
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash') 
+
+# 🚨 범인 검거 완료! 하루 1500번 쓸 수 있는 안정적인 1.5 모델로 교체! 🚨
+model = genai.GenerativeModel('gemini-1.5-flash') 
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 CURRENT_FOLDER = os.path.dirname(os.path.abspath(__file__))
@@ -230,8 +232,8 @@ def send_email_with_excel(filename, total_count, important_count):
 def main():
     print(f"\n[🚀 일일 자동화 모드] 가동 시작...")
     
-    # 🚨🚨🚨 함정 수사용 핵심 간판! 이게 화면에 안 뜨면 깃허브가 고장난 겁니다! 🚨🚨🚨
-    print(f"\n🚨 [V6.5 최종 테스트] 60초 딜레이 시스템이 완벽하게 가동됩니다! 🚨")
+    # 🚨 이 간판이 뜨면 무조건 1.5 모델 장착 완료!
+    print(f"\n🚨 [V7 최종 완성본] 모델 교체 완료! (gemini-1.5-flash / 15초 쾌속 모드) 🚨")
     
     laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
     
@@ -242,7 +244,7 @@ def main():
     if not laws:
         print("오늘은 새로 시행되는 전체 법령이 없습니다. (빈 보고서 발송 준비)")
     else:
-        print(f"🏎️ 제미나이(Gemini) 2.5 AI가 오늘 시행되는 {len(laws)}건의 법령을 심사합니다...")
+        print(f"🏎️ 제미나이(Gemini) AI가 오늘 시행되는 {len(laws)}건의 법령을 심사합니다...")
         
         relation_keywords = ["자격", "기술", "면허", "기사", "기능", "안전", "환경", "폐기물", "시공", "관리", "검사"]
         
@@ -250,10 +252,10 @@ def main():
             if any(kw in law["법령명"] + law["주요 제·개정내용_원본"] for kw in relation_keywords):
                 relation_count += 1
 
-            print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... (60초 대기) ", end="", flush=True)
+            print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... (15초 대기) ", end="", flush=True)
             
-            # 🚨 60초 휴식 타이머 (무조건 작동)
-            time.sleep(60) 
+            # 🚨 15초 쾌속 모드 (1.5 플래시 모델은 1분에 15개 허용)
+            time.sleep(15) 
             
             prompt = f"""
             당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
