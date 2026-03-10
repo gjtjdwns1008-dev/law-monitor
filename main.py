@@ -22,9 +22,9 @@ from openpyxl.utils import get_column_letter
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL") # 🚨 네이버 이메일 주소
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD") # 🚨 네이버 앱 비밀번호
+RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL") # 🚨 수신자 (콤마로 구분 시 다중 발송 가능)
 
 # ==========================================
 # 2. 한국 시간(KST) 세팅
@@ -189,7 +189,9 @@ def send_email_with_excel(filename, total_count, important_count):
     print("\n📧 이메일 발송을 준비합니다...")
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL
+    
+    # 🚨 RECEIVER_EMAIL에 콤마(,)가 포함되어 있어도 정상 작동합니다!
+    msg['To'] = RECEIVER_EMAIL 
     msg['Subject'] = f"🤖 [일일 모니터링] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
 
     body = f"""
@@ -217,12 +219,17 @@ def send_email_with_excel(filename, total_count, important_count):
     msg.attach(part)
 
     try:
+        # 🚨 구글 gsmtp 차단 방어: 완벽한 네이버 SMTP 주소 적용!
         server = smtplib.SMTP('smtp.naver.com', 587)
         server.starttls()
         server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-        server.send_message(msg)
+        
+        # 다중 발송 처리: RECEIVER_EMAIL이 콤마로 구분된 경우 리스트로 변환하여 발송
+        receiver_list = [email.strip() for email in RECEIVER_EMAIL.split(',')]
+        server.sendmail(SENDER_EMAIL, receiver_list, msg.as_string())
+        
         server.quit()
-        print("✅ 이메일 발송 성공! 사내 메일함을 확인하세요.")
+        print(f"✅ 이메일 발송 성공! 사내 메일함을 확인하세요. (수신자: {RECEIVER_EMAIL})")
     except Exception as e:
         print(f"❌ 이메일 발송 실패: {e}")
 
@@ -247,7 +254,7 @@ def main():
 
             print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... ", end="", flush=True)
             
-            # 🚨 구글 무료 API의 분당 처리량(TPM) 초과를 완벽 방어하는 30초 대기!
+            # 🚨 구글 무료 API의 분당 글자 수(TPM) 초과를 완벽하게 방어하는 30초 대기!
             time.sleep(30) 
             
             prompt = f"""
@@ -302,7 +309,7 @@ def main():
                 utility_impact = ai_data.get("활용도_분석", "분석 불가")
                 
             except Exception as e:
-                # 🚨 에러가 나면 상세 사유를 출력하고 한 템포 쉬고 넘어갑니다!
+                # 🚨 에러가 발생하면 멈추지 않고 상세 사유를 명확히 출력한 뒤 10초 휴식 후 다음으로 넘어갑니다.
                 print(f"❌ [에러 발생] {e} (10초 후 다음 법령 진행)")
                 time.sleep(10)
                 continue 
