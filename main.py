@@ -18,16 +18,16 @@ from openpyxl.styles import Alignment, PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. 환경 변수 세팅
+# 1. 환경 변수 세팅 (GitHub Secrets)
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") 
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 # ==========================================
-# 2. 한국 시간(KST) 세팅
+# 2. 한국 시간(KST) 및 유료 모델 설정
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
@@ -35,7 +35,7 @@ TARGET_DATE = today.strftime("%Y%m%d")
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 genai.configure(api_key=GEMINI_API_KEY)
-
+# 🚨 유료 계정 주력 모델인 2.5-flash로 원복 및 고정!
 model = genai.GenerativeModel('gemini-2.5-flash') 
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
@@ -48,7 +48,7 @@ session.mount('http://', adapter)
 session.mount('https://', adapter)
 
 # ==========================================
-# 3. 최신 국가기술자격 491개 마스터 도감
+# 3. 최신 국가기술자격 491개 마스터 도감 (V6 정통 계승)
 # ==========================================
 QNET_CERTS = """
 [사업관리] 공공조달관리사
@@ -79,9 +79,7 @@ QNET_CERTS = """
 def get_todays_laws(api_key, target_date):
     all_laws_dict = {}
     search_date_range = f"{target_date}~{target_date}"
-    
-    print(f"\n📅 [{target_date}] 오늘 시행되는 법제처 법령 데이터를 수집합니다...")
-    
+    print(f"\n📅 [{target_date}] 법제처 법령 데이터를 수집합니다...")
     for target_type in ['law', 'histlaw']:
         page = 1
         while True:
@@ -89,270 +87,122 @@ def get_todays_laws(api_key, target_date):
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
                 root = ET.fromstring(response.text)
-            except Exception:
-                break
-                
+            except Exception: break
             law_nodes = root.findall('.//law')
-            if not law_nodes:
-                break
-                
+            if not law_nodes: break
             for law in law_nodes:
-                law_id = law.find('법령일련번호').text if law.find('법령일련번호') is not None else ""
-                law_name = law.find('법령명한글').text if law.find('법령명한글') is not None else "이름없음"
-                enforce_date = law.find('시행일자').text if law.find('시행일자') is not None else "날짜없음"
-                
-                if not law_id or law_name in all_laws_dict:
-                    continue
-                    
+                law_id = law.find('법령일련번호').text
+                law_name = law.find('법령명한글').text
+                if law_name in all_laws_dict: continue
                 detail_url = f"https://www.law.go.kr/DRF/lawService.do?OC={api_key}&target={target_type}&MST={law_id}&type=XML"
                 try:
                     detail_response = session.get(detail_url, headers=HEADERS, timeout=15)
                     detail_root = ET.fromstring(detail_response.text)
-                    
                     reason_text = ""
                     for tag in ['.//개정이유', './/제개정이유']:
                         r_node = detail_root.find(tag)
-                        if r_node is not None and r_node.text:
-                            reason_text += r_node.text.strip() + "\n"
-                            
+                        if r_node is not None and r_node.text: reason_text += r_node.text.strip() + "\n"
                     jomuns = detail_root.findall('.//조문내용')
                     body_text = "\n".join([j.text.strip() for j in jomuns if j.text])
-                    
                     stars = detail_root.findall('.//별표내용')
                     star_text = "\n".join([s.text.strip() for s in stars if s.text])
-                    
-                    full_text = f"[개정이유]\n{reason_text}\n[조문내용]\n{body_text}\n[별표내용]\n{star_text}"
-                    full_text = full_text[:20000] 
-                    
-                except:
-                    full_text = "서버 응답 지연"
-                
-                all_laws_dict[law_name] = {
-                    "법령명": law_name,
-                    "시행일자": enforce_date,
-                    "주요 제·개정내용_원본": full_text
-                }
-                
-                print(f"  📥 [가져오는 중...] {law_name}")
-                time.sleep(0.5) 
-                
-            if len(law_nodes) < 100: 
-                break
-            page += 1 
-            
+                    full_text = f"[개정이유]\n{reason_text}\n[조문내용]\n{body_text}\n[별표내용]\n{star_text}"[:20000]
+                except: full_text = "서버 응답 지연"
+                all_laws_dict[law_name] = {"법령명": law_name, "시행일자": law.find('시행일자').text, "주요 제·개정내용_원본": full_text}
+                time.sleep(0.5)
+            if len(law_nodes) < 100: break
+            page += 1
     return list(all_laws_dict.values())
 
 def apply_excel_formatting(filename, df_summary, df_detail):
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='요약표', index=False)
         df_detail.to_excel(writer, sheet_name='상세분석', index=False)
-        
     wb = load_workbook(filename)
     ws_detail = wb['상세분석']
     cols_to_resize = ['법령명', '주요 제·개정내용', '법령 관련 국가기술자격 종목', '활용도 심층분석']
-    
     headers = [cell.value for cell in ws_detail[1]]
     for col_name in cols_to_resize:
         if col_name in headers:
             col_idx = headers.index(col_name) + 1
-            col_letter = get_column_letter(col_idx)
-            ws_detail.column_dimensions[col_letter].width = 45
-
+            ws_detail.column_dimensions[get_column_letter(col_idx)].width = 45
     fill_even = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
-    fill_odd = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
-    
+    fill_header = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     for row_idx, row in enumerate(ws_detail.iter_rows(min_row=1), start=1):
         for cell in row:
             if row_idx == 1:
                 cell.alignment = Alignment(horizontal='center', vertical='center')
                 cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+                cell.fill = fill_header
             else:
                 cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
-                if row_idx % 2 == 0:
-                    cell.fill = fill_even
-                else:
-                    cell.fill = fill_odd
-
+                if row_idx % 2 == 0: cell.fill = fill_even
     ws_summary = wb['요약표']
-    for col in ws_summary.columns:
-        ws_summary.column_dimensions[col[0].column_letter].width = 20
+    for col in ws_summary.columns: ws_summary.column_dimensions[col[0].column_letter].width = 25
     for row_idx, row in enumerate(ws_summary.iter_rows(min_row=1), start=1):
         for cell in row:
             cell.alignment = Alignment(horizontal='center', vertical='center')
             if row_idx == 1 or cell.column == 1:
-                cell.font = Font(bold=True)
-                cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-
+                cell.font = Font(bold=True); cell.fill = fill_header
     wb.save(filename)
 
 def send_email_with_excel(filename, total_count, important_count):
-    print("\n📧 이메일 발송을 준비합니다...")
+    print("\n📧 네이버 우체부가 출발합니다...")
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL 
-    msg['Subject'] = f"🤖 [일일 모니터링] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
-
-    body = f"""
-    자동화 서버에서 작성된 {FILE_PREFIX} 관계 법령 일일 모니터링 결과입니다.
-    
-    ▶ 오늘 시행되는 총 법령 수: {total_count}건
-    ▶ 자격 규제 유의미(중요) 법령: {important_count}건
-    """
-    
-    if important_count == 0:
-        body += "\n※ 오늘은 국가기술자격 관련 행정 규제 변동(제·개정) 사항이 없습니다.\n"
-        
-    body += """
-    상세한 심층 분석 결과는 첨부된 엑셀 파일을 확인해 주십시오.
-    (본 메일은 GitHub Actions 클라우드 서버를 통해 매일 아침 자동 발송됩니다.)
-    """
-    
+    msg['To'] = RECEIVER_EMAIL
+    msg['Subject'] = f"🚀 [유료-쾌속] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
+    body = f"자동화 서버에서 작성된 {FILE_PREFIX} 분석 결과입니다.\n\n▶ 전체 법령: {total_count}건 / 중요 법령: {important_count}건\n유료 API를 활용하여 1초 간격으로 정밀 분석되었습니다."
     msg.attach(MIMEText(body, 'plain'))
-
     with open(filename, "rb") as attachment:
         part = MIMEBase("application", "octet-stream")
         part.set_payload(attachment.read())
     encoders.encode_base64(part)
-    part.add_header("Content-Disposition", f"attachment; filename= HRDKorea_Law_Report_{TARGET_DATE}.xlsx")
+    part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(filename)}")
     msg.attach(part)
-
     try:
-        server = smtplib.SMTP('smtp.naver.com', 587)
-        server.starttls()
+        server = smtplib.SMTP('smtp.naver.com', 587); server.starttls()
         server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-        receiver_list = [email.strip() for email in RECEIVER_EMAIL.split(',')]
-        server.sendmail(SENDER_EMAIL, receiver_list, msg.as_string())
-        server.quit()
-        print(f"✅ 이메일 발송 성공! 사내 메일함을 확인하세요. (수신자: {RECEIVER_EMAIL})")
-    except Exception as e:
-        print(f"❌ 이메일 발송 실패: {e}")
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL.split(','), msg.as_string())
+        server.quit(); print("✅ 이메일 발송 성공!")
+    except Exception as e: print(f"❌ 이메일 실패: {e}")
 
 def main():
-    print(f"\n[🚀 일일 자동화 모드] 가동 시작...")
-    
-    # 🚨 이 간판이 뜨면 무조건 2.5 모델 장착 완료!
-    print(f"\n🚨 [V7 최종 완성본] 모델 교체 완료! (gemini-2.5-flash / 15초 쾌속 모드) 🚨")
-    
+    print(f"\n🔥 [V8.1 정통 계승] 유료 1초 쾌속 모드 가동!")
     laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
-    
-    filename = os.path.join(CURRENT_FOLDER, f"HRDKorea_Law_Report_{TARGET_DATE}.xlsx")
-    important_laws = []
-    relation_count = 0
-    
-    if not laws:
-        print("오늘은 새로 시행되는 전체 법령이 없습니다. (빈 보고서 발송 준비)")
-    else:
-        print(f"🏎️ 제미나이(Gemini) AI가 오늘 시행되는 {len(laws)}건의 법령을 심사합니다...")
-        
-        relation_keywords = ["자격", "기술", "면허", "기사", "기능", "안전", "환경", "폐기물", "시공", "관리", "검사"]
-        
-        for index, law in enumerate(laws):
-            if any(kw in law["법령명"] + law["주요 제·개정내용_원본"] for kw in relation_keywords):
-                relation_count += 1
+    if not laws: return
+    important_laws = []; relation_count = 0
+    print(f"🏎️ {len(laws)}건의 법령을 정밀 심사합니다...")
+    relation_keywords = ["자격", "기술", "면허", "기사", "기능", "안전", "환경", "폐기물", "시공", "관리", "검사"]
+    for idx, law in enumerate(laws):
+        if any(kw in law["법령명"] + law["주요 제·개정내용_원본"] for kw in relation_keywords): relation_count += 1
+        print(f"[{idx+1}/{len(laws)}] {law['법령명']} 분석 중... ", end="", flush=True)
+        # 🚨 유료의 힘: 1초 대기로도 충분합니다.
+        time.sleep(1)
+        prompt = f"""
+        당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
+        엄격한 잣대로 법령을 평가하세요. AI의 과잉 추론을 배제하십시오.
+        [국가기술자격 사전] {QNET_CERTS}
+        [분석 대상] 법령명: {law['법령명']} / 내용: {law['주요 제·개정내용_원본']}
+        [자격 활용도 판단 기준]
+        1. 대폭 증가: 의무 선임/배치 기준 신설/강화 (직접 명시 필수)
+        2. 소폭 증가: 가산점/우대 조건 신설 등 법적 혜택 추가
+        3. 변동 없음: 단순 산업 진흥, 예산 지원, 행정 절차 변경 등
+        [출력 JSON] {{"분류": "중요 또는 일반/무관", "요약": "개조식 요약", "종목": "관련 종목", "활용도_구분": "대폭 증가 등", "활용도_분석": "판단 근거"}}
+        """
+        try:
+            res = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+            ai_data = json.loads(res.text.strip())
+            if "중요" in ai_data.get("분류") and ai_data.get("활용도_구분") != "변동 없음":
+                important_laws.append({"연번": len(important_laws)+1, "시행일자": law["시행일자"], "법령명": law["법령명"], "주요 제·개정내용": ai_data.get("요약"), "법령 관련 국가기술자격 종목": ai_data.get("종목"), "활용도 구분": ai_data.get("활용도_구분"), "활용도 심층분석": ai_data.get("활용도_분석")})
+                print("👉 [채택]")
+            else: print("❌ [패스]")
+        except Exception as e: print(f"❌ [에러] {e}"); continue
+    if not important_laws: important_laws.append({"연번": "-", "시행일자": TARGET_DATE, "법령명": "해당 없음", "주요 제·개정내용": "관련 제·개정사항 없음", "법령 관련 국가기술자격 종목": "-", "활용도 구분": "-", "활용도 심층분석": "-"})
+    df_s = pd.DataFrame({"구분": ["오늘의 시행법령 총계", "국가기술자격 관계 법령", "분석 및 관련 높은 법령"], "건수": [len(laws), relation_count, len(important_laws) if important_laws[0]["연번"] != "-" else 0]})
+    df_d = pd.DataFrame(important_laws)
+    fname = os.path.join(CURRENT_FOLDER, f"HRDKorea_Law_Report_{TARGET_DATE}.xlsx")
+    apply_excel_formatting(fname, df_s, df_d)
+    send_email_with_excel(fname, len(laws), len(important_laws) if important_laws[0]["연번"] != "-" else 0)
 
-            print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... (15초 대기) ", end="", flush=True)
-            
-            # 🚨 15초 쾌속 모드 (1.5 플래시 모델은 1분에 15개 허용)
-            time.sleep(15) 
-            
-            prompt = f"""
-            당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
-            매우 보수적이고 엄격한 잣대로 법령을 평가해야 합니다. AI의 과잉 추론이나 상상력을 절대 배제하십시오.
-
-            [국가기술자격 사전]
-            {QNET_CERTS}
-
-            [분석 대상]
-            법령명: {law['법령명']}
-            법령내용 원문(개정이유, 조문, 별표 포함): {law['주요 제·개정내용_원본']}
-
-            [🚨 절대 준수 사항 (금지어 및 제한 조건)]
-            1. 간접 추론 금지: "정부 지원이 늘어나니 산업이 커질 것이고, 따라서 자격증 수요도 늘어날 것이다" 같은 간접적/연쇄적 추론은 절대 금지합니다.
-            2. 무관한 법령 배제: 법령 원문에 자격증 소지자의 '의무 선임', '배치 기준 신설/강화/완화', '자격 요건'에 대한 "직접적인" 언급이나 행정 규제 변화가 없다면 무조건 "일반/무관" 및 "변동 없음"으로 판정하세요.
-            
-            [자격 활용도 판단 기준]
-            1. 대폭 증가: 특정 국가기술자격증 소지자의 '의무 선임'이나 '배치 기준'이 법적으로 신설되거나 대폭 강화된 경우 (직접적 명시 필수).
-            2. 소폭 증가: 자격증 취득 시 가산점 부여, 우대 조건 신설 등 직접적인 법적 혜택이 추가된 경우.
-            3. 변동 없음: 단순 산업 진흥, 예산 지원, 행정 절차 변경, 타법 개정에 따른 부처명 변경 등 직접적인 자격 규제 변동이 없는 모든 경우.
-            4. 소폭 감소: 특정 자격증 외에 다른 경력이나 학력으로도 선임될 수 있도록 대체 요건이 추가된 경우.
-            5. 대폭 감소: 기존 자격증 선임 의무가 법적으로 완전히 폐지되거나 규제가 대폭 완화된 경우.
-
-            [출력 JSON 형식]
-            {{
-                "분류": "중요 또는 일반/무관 (자격 규제와 관련된 '직접적인' 명시가 없다면 가차 없이 '일반/무관'으로 분류할 것)",
-                "요약": "법령의 핵심 목적과 주요 내용을 개조식('~함', '~임')으로 요약 (줄바꿈 없이 작성)",
-                "종목": "매칭된 국가기술자격증 나열 (없으면 '없음')",
-                "활용도_구분": "대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소 중 택 1",
-                "활용도_분석": "왜 그렇게 판단했는지 행정 규제 관점에서 매우 엄격하게 서술"
-            }}
-            """
-            
-            try:
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                raw_text = response.text.strip()
-                if raw_text.startswith("```json"):
-                    raw_text = raw_text[7:]
-                if raw_text.endswith("```"):
-                    raw_text = raw_text[:-3]
-                    
-                ai_data = json.loads(raw_text.strip())
-                
-                judgement = ai_data.get("분류", "오류")
-                summary = ai_data.get("요약", "요약 불가")
-                related_certs = ai_data.get("종목", "없음")
-                utility_category = ai_data.get("활용도_구분", "분류 안됨")
-                utility_impact = ai_data.get("활용도_분석", "분석 불가")
-                
-            except Exception as e:
-                print(f"❌ [에러 발생] {e} (10초 후 다음 법령 진행)")
-                time.sleep(10)
-                continue 
-            
-            if "중요" in judgement and "변동 없음" not in utility_category:
-                important_laws.append({
-                    "연번": len(important_laws) + 1,
-                    "시행일자": law["시행일자"],
-                    "법령명": law["법령명"],
-                    "주요 제·개정내용": summary,  
-                    "법령 관련 국가기술자격 종목": related_certs,
-                    "활용도 구분": utility_category,
-                    "활용도 심층분석": utility_impact
-                })
-                print(f"👉 [채택] {utility_category} | {related_certs}")
-            else:
-                print(f"❌ [패스]")
-
-    if not important_laws:
-        formatted_date = f"{TARGET_DATE[:4]}-{TARGET_DATE[4:6]}-{TARGET_DATE[6:]}"
-        important_laws.append({
-            "연번": "-",
-            "시행일자": formatted_date,
-            "법령명": "해당 없음",
-            "주요 제·개정내용": "오늘의 국가기술자격 관련 법령 제·개정사항이 없습니다.",
-            "법령 관련 국가기술자격 종목": "-",
-            "활용도 구분": "-",
-            "활용도 심층분석": "-"
-        })
-        
-    real_important_count = len(important_laws) if important_laws[0]["연번"] != "-" else 0
-    
-    summary_data = {
-        "구분": ["오늘의 시행법령 총계", "국가기술자격 관계 법령", "분석 및 관련 높은 법령"],
-        "건수": [len(laws), relation_count, real_important_count]
-    }
-    
-    df_summary = pd.DataFrame(summary_data)
-    df_detail = pd.DataFrame(important_laws)
-    
-    apply_excel_formatting(filename, df_summary, df_detail)
-    send_email_with_excel(filename, len(laws), real_important_count)
-    
-    print("\n==========================================")
-    print(f"🎉 오늘의 엑셀 공장 가동이 완료되었습니다: {filename}")
-
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
