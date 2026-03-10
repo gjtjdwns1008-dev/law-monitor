@@ -18,7 +18,7 @@ from openpyxl.styles import Alignment, PatternFill, Font
 from openpyxl.utils import get_column_letter
 
 # ==========================================
-# 1. 환경 변수 (GitHub 보안 금고에서 자동으로 불러옴)
+# 1. 환경 변수 세팅
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -27,7 +27,7 @@ EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 # ==========================================
-# 2. 한국 시간(KST) 기준 오늘 날짜 자동 세팅
+# 2. 한국 시간(KST) 세팅
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
@@ -132,7 +132,7 @@ def apply_excel_formatting(filename, df_summary, df_detail):
         
     wb = load_workbook(filename)
     ws_detail = wb['상세분석']
-    cols_to_resize = ['법령명', '주요 제·개정내용', '법령 관련 국가기술자격 종목', '효용성 심층분석']
+    cols_to_resize = ['법령명', '주요 제·개정내용', '법령 관련 국가기술자격 종목', '활용도 심층분석'] # 🚨 변경됨
     
     headers = [cell.value for cell in ws_detail[1]]
     for col_name in cols_to_resize:
@@ -241,7 +241,7 @@ def main():
         1. 간접 추론 금지: "정부 지원이 늘어나니 산업이 커질 것이고, 따라서 자격증 수요도 늘어날 것이다" 같은 간접적/연쇄적 추론은 절대 금지합니다.
         2. 무관한 법령 배제: 법령 원문에 자격증 소지자의 '의무 선임', '배치 기준 신설/강화/완화', '자격 요건'에 대한 "직접적인" 언급이나 행정 규제 변화가 없다면 무조건 "일반/무관" 및 "변동 없음"으로 판정하세요.
         
-        [자격 효용성 판단 기준]
+        [자격 활용도 판단 기준]
         1. 대폭 증가: 특정 국가기술자격증 소지자의 '의무 선임'이나 '배치 기준'이 법적으로 신설되거나 대폭 강화된 경우 (직접적 명시 필수).
         2. 소폭 증가: 자격증 취득 시 가산점 부여, 우대 조건 신설 등 직접적인 법적 혜택이 추가된 경우.
         3. 변동 없음: 단순 산업 진흥, 예산 지원, 행정 절차 변경, 타법 개정에 따른 부처명 변경 등 직접적인 자격 규제 변동이 없는 모든 경우.
@@ -253,8 +253,8 @@ def main():
             "분류": "중요 또는 일반/무관 (자격 규제와 관련된 '직접적인' 명시가 없다면 가차 없이 '일반/무관'으로 분류할 것)",
             "요약": "법령의 핵심 목적과 주요 내용을 개조식('~함', '~임')으로 요약 (줄바꿈 없이 작성)",
             "종목": "매칭된 국가기술자격증 나열 (없으면 '없음')",
-            "효용성_구분": "대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소 중 택 1",
-            "효용성_분석": "왜 그렇게 판단했는지 행정 규제 관점에서 매우 엄격하게 서술"
+            "활용도_구분": "대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소 중 택 1",
+            "활용도_분석": "왜 그렇게 판단했는지 행정 규제 관점에서 매우 엄격하게 서술"
         }}
         """
         
@@ -263,7 +263,6 @@ def main():
                 prompt,
                 generation_config={"response_mime_type": "application/json"}
             )
-            # 가끔 AI가 ```json 포맷을 붙이는 것을 방지
             raw_text = response.text.strip()
             if raw_text.startswith("```json"):
                 raw_text = raw_text[7:]
@@ -275,8 +274,10 @@ def main():
             judgement = ai_data.get("분류", "오류")
             summary = ai_data.get("요약", "요약 불가")
             related_certs = ai_data.get("종목", "없음")
-            utility_category = ai_data.get("효용성_구분", "분류 안됨")
-            utility_impact = ai_data.get("효용성_분석", "분석 불가")
+            
+            # 🚨 변수명과 키값 '활용도'로 매핑
+            utility_category = ai_data.get("활용도_구분", "분류 안됨")
+            utility_impact = ai_data.get("활용도_분석", "분석 불가")
             
         except Exception as e:
             print(f"❌ [에러] 통신 실패. 3초 대기")
@@ -290,15 +291,15 @@ def main():
                 "법령명": law["법령명"],
                 "주요 제·개정내용": summary,  
                 "법령 관련 국가기술자격 종목": related_certs,
-                "효용성 구분": utility_category,
-                "효용성 심층분석": utility_impact 
+                "활용도 구분": utility_category,    # 🚨 엑셀 입력
+                "활용도 심층분석": utility_impact   # 🚨 엑셀 입력
             })
             print(f"👉 [채택] {utility_category} | {related_certs}")
         else:
             print(f"❌ [패스]")
             
     summary_data = {
-        "구분": ["오늘의 시행법령 총계", "국가기술자격 관계 법령", "활용 및 관련 높은 법령"],
+        "구분": ["오늘의 시행법령 총계", "국가기술자격 관계 법령", "분석 및 관련 높은 법령"],
         "건수": [len(laws), relation_count, len(important_laws)]
     }
     df_summary = pd.DataFrame(summary_data)
