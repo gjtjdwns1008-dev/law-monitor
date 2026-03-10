@@ -199,7 +199,6 @@ def send_email_with_excel(filename, total_count, important_count):
     ▶ 자격 규제 유의미(중요) 법령: {important_count}건
     """
     
-    # 🚨 유의미한 법령이 없을 때 메일 본문 안내 추가
     if important_count == 0:
         body += "\n※ 오늘은 국가기술자격 관련 행정 규제 변동(제·개정) 사항이 없습니다.\n"
         
@@ -235,7 +234,6 @@ def main():
     important_laws = []
     relation_count = 0
     
-    # 🚨 아예 법령이 없는 경우에도 이메일을 보내기 위해 분기 처리
     if not laws:
         print("오늘은 새로 시행되는 전체 법령이 없습니다. (빈 보고서 발송 준비)")
     else:
@@ -248,7 +246,9 @@ def main():
                 relation_count += 1
 
             print(f"[{index+1}/{len(laws)}] {law['법령명']} 분석 중... ", end="", flush=True)
-            time.sleep(6) # 무료 API 한도 방어
+            
+            # 🚨 구글 무료 API의 분당 처리량(TPM) 초과를 완벽 방어하는 30초 대기!
+            time.sleep(30) 
             
             prompt = f"""
             당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
@@ -302,8 +302,9 @@ def main():
                 utility_impact = ai_data.get("활용도_분석", "분석 불가")
                 
             except Exception as e:
-                print(f"❌ [에러] 통신 실패. 3초 대기")
-                time.sleep(3)
+                # 🚨 에러가 나면 상세 사유를 출력하고 한 템포 쉬고 넘어갑니다!
+                print(f"❌ [에러 발생] {e} (10초 후 다음 법령 진행)")
+                time.sleep(10)
                 continue 
             
             if "중요" in judgement and "변동 없음" not in utility_category:
@@ -320,7 +321,6 @@ def main():
             else:
                 print(f"❌ [패스]")
 
-    # 🚨 유의미한 법령이 0건일 때 엑셀 빈칸 방지 문구 추가
     if not important_laws:
         formatted_date = f"{TARGET_DATE[:4]}-{TARGET_DATE[4:6]}-{TARGET_DATE[6:]}"
         important_laws.append({
@@ -333,7 +333,6 @@ def main():
             "활용도 심층분석": "-"
         })
         
-    # 요약 데이터 세팅 (연번이 '-'인 가짜 데이터는 개수 카운트에서 제외하여 0건으로 표시)
     real_important_count = len(important_laws) if important_laws[0]["연번"] != "-" else 0
     
     summary_data = {
