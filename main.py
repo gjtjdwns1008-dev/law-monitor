@@ -36,7 +36,7 @@ FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel('gemini-2.0-flash') 
+model = genai.GenerativeModel('gemini-2.5-flash-lite') 
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 CURRENT_FOLDER = os.path.dirname(os.path.abspath(__file__))
