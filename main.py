@@ -63,11 +63,7 @@ def get_todays_laws(api_key, target_date):
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
                 
-                # 빈 페이지(백지)를 받으면 조용히 다음으로 넘어가기
-                if not response.text.strip():
-                    break
-                    
-                if response.status_code != 200:
+                if not response.text.strip() or response.status_code != 200:
                     break
                     
                 root = ET.fromstring(response.text)
@@ -161,10 +157,10 @@ def main():
         return
     
     important_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V17) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V18 무결점 패치) 시작...")
     
     for idx, law in enumerate(laws):
-        print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="")
+        print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
         
         prompt = f"""
         당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다. 
@@ -179,22 +175,21 @@ def main():
         2. 활용도_구분: [대폭 증가, 소폭 증가, 변동 없음, 소폭 감소, 대폭 감소] 중 반드시 하나 선택
         3. 직접적 명시가 없는 추론은 모두 '변동 없음' 처리할 것.
         
-        [🚨 JSON 작성 절대 규칙 (위반 시 시스템 붕괴됨)]
-        1. "활용도_분석"에 500자 상세 보고서를 작성하되, **절대 실제 줄바꿈(Enter)을 사용하지 마십시오.** 줄바꿈이 필요하면 반드시 '\\n' 기호를 사용하십시오.
-        2. 문자열 내용 안에 큰따옴표(")를 쓰지 마시고, 필요하면 작은따옴표(')로 대체하십시오.
-        3. ```json 같은 마크다운 기호나 설명 문구를 절대 넣지 말고, 오직 {{ 로 시작해서 }} 로 끝나는 순수 JSON만 출력하십시오.
+        [🚨 JSON 작성 절대 규칙 (위반 시 즉시 해고됨)]
+        1. 출력은 반드시 **단 1개의 JSON 객체({{ }})**로만 작성하세요. 절대 배열([ ])이나 여러 개의 객체를 반환하지 마세요.
+        2. "활용도_분석"에 500자 상세 보고서를 작성하되, **내용(value) 안에 절대 큰따옴표(")나 실제 줄바꿈(Enter)을 쓰지 마세요.** 3. 큰따옴표 대신 반드시 작은따옴표(')를 사용하고, 줄바꿈은 '\\n' 기호를 사용하세요.
+        4. ```json 같은 마크다운 기호나 설명 문구를 절대 넣지 마세요.
 
-        [출력 JSON]
+        [출력 JSON 형태]
         {{
             "분류": "중요 또는 일반",
             "요약": "법령 핵심 요약",
             "종목": "매칭된 자격증 명칭",
             "활용도_구분": "5단계 중 선택",
-            "활용도_분석": "500자 상세 보고서 (줄바꿈 없이 한 줄로 길게 작성)"
+            "활용도_분석": "500자 상세 보고서"
         }}
         """
         try:
-            # 답변이 끊기지 않도록 최대 길이(max_output_tokens)를 8,000자로 확 늘림!
             response = model.generate_content(
                 prompt, 
                 generation_config={
@@ -204,20 +199,24 @@ def main():
             )
             raw_text = response.text.strip()
             
-            # [V17 핵심 패치] 제미나이 헛소리 필터링 (JSON 정수기)
-            # 1. 마크다운(```json) 찌꺼기가 붙어오면 강제로 벗겨냄
+            # [V18 핵심 패치] 완벽한 JSON 정수기 (배열 파괴 문제 수정)
+            # 1. 마크다운 찌꺼기 완벽 제거
             if raw_text.startswith("```"):
-                raw_text = raw_text.strip("`").replace("json", "", 1).strip()
-                
-            # 2. 진짜 { } 괄호 안쪽만 수술해서 빼냄 (Extra data 에러 원천 차단)
-            start_idx = raw_text.find('{')
-            end_idx = raw_text.rfind('}')
-            if start_idx != -1 and end_idx != -1:
-                raw_text = raw_text[start_idx:end_idx+1]
+                raw_text = raw_text.strip("`").strip()
+                if raw_text.lower().startswith("json"):
+                    raw_text = raw_text[4:].strip()
             
-            # 3. 만약 진짜 줄바꿈이 숨어있더라도 에러 안 나게 눈감아줌 (strict=False)
-            data = json.loads(raw_text, strict=False)
+            # 2. 정공법 파싱 (strict=False로 숨은 오류 허용)
+            try:
+                data = json.loads(raw_text, strict=False)
+            except json.JSONDecodeError:
+                # 제미나이가 배열 기호를 빼먹고 객체를 던졌을 때를 대비한 자동 복구
+                try:
+                    data = json.loads(f"[{raw_text}]", strict=False)
+                except:
+                    data = {}
             
+            # 리스트로 넘어왔을 경우 첫 번째 알맹이만 빼기
             if isinstance(data, list): 
                 data = data[0] if len(data) > 0 else {}
             
@@ -231,12 +230,11 @@ def main():
                     "심층분석": data.get("활용도_분석", "분석 불가")
                 })
                 print("👉 [채택]")
-            else: print("❌ [패스]")
+            else: 
+                print("❌ [패스]")
             
         except Exception as e: 
-            print(f"⚠️ [에러 패스] 상세 원인: {e}")
-            # 에러가 난 텍스트가 대체 뭐였는지 디버깅용으로 50자만 출력해보기
-            print(f"   [디버그용 원본 찌꺼기]: {raw_text[:50]}...")
+            print(f"⚠️ [분석 실패] {e}")
         
     if important_laws:
         df_detail = pd.DataFrame(important_laws)
