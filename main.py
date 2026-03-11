@@ -34,7 +34,6 @@ today = datetime.now(KST)
 TARGET_DATE = today.strftime("%Y%m%d")
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
-# 신형 클라이언트 방식으로 변경!
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
@@ -184,7 +183,7 @@ def main():
     
     high_impact_laws = []
     simple_related_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V22: 신형 GenAI 엔진 & 5대 우대요건 탑재) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V23: 365일 무조건 발송 통계 패치) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
@@ -222,7 +221,6 @@ def main():
         }}
         """
         try:
-            # 신형 SDK 방식의 모델 호출 코드
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=prompt,
@@ -233,7 +231,6 @@ def main():
             )
             raw_text = response.text.strip()
             
-            # 아래부터는 JSON 파싱 로직 (동일)
             if raw_text.startswith("```"):
                 raw_text = raw_text.strip("`").strip()
                 if raw_text.lower().startswith("json"):
@@ -275,12 +272,11 @@ def main():
         "건수": [len(laws), len(high_impact_laws), len(simple_related_laws)]
     })
     
-    if len(high_impact_laws) > 0 or len(simple_related_laws) > 0:
-        fname = f"HRD_Daily_Report_{TARGET_DATE}.xlsx"
-        apply_excel_formatting(fname, df_summary, df_high, df_simple)
-        send_naver_email(fname, len(laws), len(high_impact_laws), len(simple_related_laws))
-    else:
-        print("\n✅ 관련 법령이 없어 메일을 발송하지 않습니다.")
+    # [V23 수정] 관련 법령 건수에 상관없이 무조건 엑셀을 만들고 메일을 보냅니다!
+    fname = f"HRD_Daily_Report_{TARGET_DATE}.xlsx"
+    apply_excel_formatting(fname, df_summary, df_high, df_simple)
+    send_naver_email(fname, len(laws), len(high_impact_laws), len(simple_related_laws))
+    print(f"\n✅ 일일 보고서({len(laws)}건 집계 완료) 생성 및 메일 발송이 정상적으로 완료되었습니다.")
 
 if __name__ == "__main__":
     main()
