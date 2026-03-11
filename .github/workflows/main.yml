@@ -20,7 +20,7 @@ jobs:
       - name: 📦 필요 라이브러리 설치
         run: |
           python -m pip install --upgrade pip
-          pip install requests pandas openpyxl google-generativeai
+          pip install requests pandas openpyxl google-genai
 
       - name: 🚀 엑셀 공장 가동 및 이메일 발송
         env: # 2단계에서 만든 금고 열쇠를 파이썬에 전달!
