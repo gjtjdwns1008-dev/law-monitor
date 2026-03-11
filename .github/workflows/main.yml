@@ -8,6 +8,8 @@ on:
 jobs:
   run_daily_report:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: 📥 소스 코드 가져오기
         uses: actions/checkout@v4
