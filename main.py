@@ -1,5 +1,3 @@
-V20코드
-
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
