@@ -1,7 +1,7 @@
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
-import google.generativeai as genai
+from google import genai  # 🆕 [수정] 최신 genai 패키지로 변경
 import time
 import os
 import json
@@ -34,8 +34,8 @@ today = datetime.now(KST)
 TARGET_DATE = today.strftime("%Y%m%d")
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash') 
+# 🆕 [수정] 최신 Client 방식으로 변경 (기존 configure 삭제)
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 session = requests.Session()
@@ -128,17 +128,27 @@ def send_naver_email(filename, total, important):
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
     msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = f"🤖 [일일 보고] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
     
-    body = f"오늘 시행법령 총 {total}건 중 자격 활용도 유의미 {important}건 분석 완료."
-    msg.attach(MIMEText(body, 'plain'))
-    
-    with open(filename, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(filename)}")
-        msg.attach(part)
+    # 🆕 [수정] 메일 발송 분기 처리 (유의미한 법령이 있을 때 vs 없을 때)
+    if important > 0 and filename:
+        msg['Subject'] = f"🤖 [일일 보고] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
+        body = f"오늘 시행법령 총 {total}건 중 자격 활용도 유의미 {important}건 분석 완료."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        with open(filename, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(filename)}")
+            msg.attach(part)
+    else:
+        # 파일이 없고 관련 법령이 없을 때의 메일 내용
+        msg['Subject'] = f"🤖 [일일 보고] {FILE_PREFIX} 관련 법령 없음"
+        if total == 0:
+            body = "오늘은 법제처에 새로 등록되거나 시행되는 법령이 없습니다."
+        else:
+            body = f"오늘 수집된 법령 총 {total}건 중, HRDKorea 자격 활용도와 관련된 유의미한 제·개정 법령은 0건입니다."
+        msg.attach(MIMEText(body, 'plain'))
     
     try:
         server = smtplib.SMTP('smtp.naver.com', 587)
@@ -154,10 +164,12 @@ def main():
     laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
     if not laws: 
         print("오늘은 새로 시행되는 법령이 없습니다. 푹 쉬십시오!")
+        # 🆕 [수정] 아예 수집된 법령이 0건일 때도 메일 발송
+        send_naver_email(None, 0, 0)
         return
     
     important_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V18 무결점 패치) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V19 무결점 패치) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
@@ -190,9 +202,11 @@ def main():
         }}
         """
         try:
-            response = model.generate_content(
-                prompt, 
-                generation_config={
+            # 🆕 [수정] 최신 genai.Client() 문법에 맞게 API 호출 방식 변경
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt, 
+                config={
                     "response_mime_type": "application/json",
                     "max_output_tokens": 8192
                 }
@@ -236,12 +250,16 @@ def main():
         except Exception as e: 
             print(f"⚠️ [분석 실패] {e}")
         
+    # 🆕 [수정] 관련 법령이 없을 때 빈 메일 발송 분기 추가
     if important_laws:
         df_detail = pd.DataFrame(important_laws)
         df_summary = pd.DataFrame({"구분": ["총 시행법령", "유의미 법령"], "건수": [len(laws), len(important_laws)]})
         fname = f"HRD_Daily_Report_{TARGET_DATE}.xlsx"
         apply_excel_formatting(fname, df_summary, df_detail)
         send_naver_email(fname, len(laws), len(important_laws))
+    else:
+        print("\n오늘 수집된 법령 중 자격 활용도와 관련된 유의미한 항목이 없어, 안내 메일만 발송합니다.")
+        send_naver_email(None, len(laws), 0)
 
 if __name__ == "__main__":
     main()
