@@ -1,7 +1,8 @@
 import requests
 import xml.etree.ElementTree as ET
 import pandas as pd
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import time
 import os
 import json
@@ -26,15 +27,15 @@ EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 # ==========================================
-# 2. 날짜 및 AI 세팅
+# 2. 날짜 및 신형 AI 세팅 (google-genai SDK 적용!)
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
 TARGET_DATE = today.strftime("%Y%m%d")
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash') 
+# 신형 클라이언트 방식으로 변경!
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 session = requests.Session()
@@ -122,10 +123,7 @@ def get_todays_laws(api_key, target_date):
 
 def apply_excel_formatting(filename, df_summary, df_high, df_simple):
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-        # 1시트: 총괄현황표
         df_summary.to_excel(writer, sheet_name='총괄현황표', index=False)
-        
-        # 2시트: 활용높음 / 3시트: 단순관련 (데이터가 없어도 헤더는 생성)
         cols = ["시행일자", "법령명", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세"]
         if df_high.empty: df_high = pd.DataFrame(columns=cols)
         if df_simple.empty: df_simple = pd.DataFrame(columns=cols)
@@ -133,7 +131,6 @@ def apply_excel_formatting(filename, df_summary, df_high, df_simple):
         df_high.to_excel(writer, sheet_name='활용 및 관련 높은 법령', index=False)
         df_simple.to_excel(writer, sheet_name='국가기술자격 관계 법령(단순 관련)', index=False)
     
-    # 엑셀 꾸미기 (색상 및 너비 조절)
     wb = load_workbook(filename)
     for sheet_name in ['활용 및 관련 높은 법령', '국가기술자격 관계 법령(단순 관련)']:
         ws = wb[sheet_name]
@@ -187,7 +184,7 @@ def main():
     
     high_impact_laws = []
     simple_related_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V20: 3단 분리 & 명칭 축약 인식) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V22: 신형 GenAI 엔진 & 5대 우대요건 탑재) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
@@ -225,11 +222,18 @@ def main():
         }}
         """
         try:
-            response = model.generate_content(
-                prompt, 
-                generation_config={"response_mime_type": "application/json", "max_output_tokens": 8192}
+            # 신형 SDK 방식의 모델 호출 코드
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=8192
+                )
             )
             raw_text = response.text.strip()
+            
+            # 아래부터는 JSON 파싱 로직 (동일)
             if raw_text.startswith("```"):
                 raw_text = raw_text.strip("`").strip()
                 if raw_text.lower().startswith("json"):
@@ -264,7 +268,6 @@ def main():
         except Exception as e: 
             print(f"⚠️ [분석 실패] {e}")
         
-    # 엑셀 저장 및 메일 발송 로직
     df_high = pd.DataFrame(high_impact_laws)
     df_simple = pd.DataFrame(simple_related_laws)
     df_summary = pd.DataFrame({
