@@ -18,7 +18,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill, Font
 
 # ==========================================
-# 1. 환경 변수 (GitHub Secrets)
+# 1. 환경 변수 (GitHub Secrets에서 가져옴)
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -27,11 +27,11 @@ EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 
 # ==========================================
-# 2. 날짜 및 신형 AI 세팅 (google-genai SDK 적용!)
+# 2. 날짜 자동 세팅 (GitHub Actions용)
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
-TARGET_DATE = today.strftime("%Y%m%d")
+TARGET_DATE = today.strftime("%Y%m%d") # 오늘 날짜 (YYYYMMDD)
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -44,10 +44,10 @@ session.mount('http://', adapter)
 session.mount('https://', adapter)
 
 # ==========================================
-# 3. 공단 전용 491개 자격 종목 (직무분야 매핑)
+# 3. 공단 전용 491개 자격 종목 사전
 # ==========================================
 QNET_CERTS = """
-[건설] 금속재창호기능사, 플라스틱창호기능사, 건축구조기술사, 건축기계설비기술사, 건축시공기술사, 건축품질시험기술사, 교통기술사, 농어업토목기술사, 도로및공항기술사, 도시계획기술사, 상하수도기술사, 수자원개발기술사, 조경기술사, 지적기술사, 지질및지반기술사, 철도기술사, 측량및지형공간정보기술사, 토목구조기술사, 토목시공기술사, 토목품질시험기술사, 토질및기초기술사, 항만및해안기술사, 해양기술사, 건축목재시공기능장, 건축일반시공기능장, 배관기능장, 잠수기능장, 건설재료시험기사, 건축기사, 건축설비기사, 교통기사, 도시계획기사, 실내건축기사, 응용지질기사, 조경기사, 지적기사, 철도토목기사, 측량및지형공간정보기사, 콘크리트기사, 토목기사, 항로표지기사, 해양공학기사, 해양자원개발기사, 해양환경기사, 건설재료시험산업기사, 건축목공산업기사, 건축산업기사, 건축설비산업기사, 건축일반시공산업기사, 공간정보융합산업기사, 교통산업기사, 방수산업기사, 배관산업기사, 실내건축산업기사, 잠수산업기사, 조경산업기사, 지적산업기사, 측량및지형공간정보산업기사, 콘크리트산업기사, 토목산업기사, 항로표지산업기사, 해양조사산업기사, 거푸집기능사, 건설재료시험기능사, 건축도장기능사, 건축목공기능사, 공간정보융합기능사, 굴착기운전기능사, 기중기운전기능사, 도배기능사, 도화기능사, 로더운전기능사, 롤러운전기능사, 미장기능사, 방수기능사, 배관기능사, 불도저운전기능사, 비계기능사, 석공기능사, 실내건축기능사, 양화장치운전기능사, 온수온돌기능사, 유리시공기능사, 잠수기능사, 전산응용건축제도기능사, 전산응용토목제도기능사, 조경기능사, 조적기능사, 지게차운전기능사, 지도제작기능사, 지적기능사, 천공기운전기능사, 천장크레인운전기능사, 철근기능사, 철도토목기능사, 측량기능사, 컨테이너크레인운전기능사, 콘크리트기능사, 타워크레인운전기능사, 타일기능사, 항공사진기능사, 항로표지기능사
+[건설] 금속재창호기능사, 플라스틱창호기능사, 건축구조기술사, 건축기계설비기술사, 건축시공기술사, 건축품질시험기술사, 교통기술사, 농어업토목기술사, 도로및공항기술사, 도시계획기술사, 상하수도기술사, 수자원개발기술사, 조경기술사, 지적기술사, 지질및지반기술사, 철도기술사, 측량및지형공간정보기술사, 토목구조기술사, 토목시공기술사, 토목품질시험기술사, 토질및기초기술사, 항만및해안기술사, 해양기술사, 건축목재시공기능장, 건축일반시공기능장, 배관기능장, 잠수기능장, 건설재료시험기사, 건축기사, 건축설비기사, 교통기사, 도시계획기사, 실내건축기사, 응용지질기사, 조경기사, 지적기사, 철도토목기사, 측량및지형공간정보기사, 콘크리트기사, 토목기사, 항로표지기사, 해양공학기사, 해양자원개발기사, 해양환경기사, 건설재료시험산업기사, 건축목공산업기사, 건축산업기사, 건축설비산업기사, 건축일반시공산업기사, 공간정보융합산업기사, 교통산업기사, 방수산업기사, 배관산업기사, 실내건축산업기사, 잠수산업기사, 조경산업기사, 지적산업기사, 측량및지형공간정보산업기사, 콘크리트산업기사, 토목산업기사, 항로표지산업기사, 해양조사산업기사, 거푸집기능사, 건설재료시험기능사, 건축도장기능사, 건축목공기능사, 공간정보융합기능사, 굴착기운전기능사, 기중기운전기능사, 도배기능사, 도화기능사, 로더운전기능사, 롤러운전기능사, 미장기능사, 방수기능사, 배관기능사, 불도저운전기능사, 비계기능사, 석공기능사, 실내건축기능사, 양화장치운전기능사, 온수온돌기능사, 유리시공기능사, 잠수기능사, 전산응용건축제도기능사, 전산응용토목제도기능사, 조경기능사, 조적기능사, 지게차운전기능사, 지도제작기능사, 지적기능사, 천공기운전기능사, 천장크레인운전기능사, 철근기능사, 철도토목기사, 측량기능사, 컨테이너크레인운전기능사, 콘크리트기능사, 타워크레인운전기능사, 타일기능사, 항공사진기능사, 항로표지기능사
 [경영·회계·사무] 공장관리기술사, 포장기술사, 품질관리기술사, 포장기사, 품질경영기사, 포장산업기사, 품질경영산업기사, 사회조사분석사1급, 사회조사분석사2급, 소비자전문상담사1급, 소비자전문상담사2급, 컨벤션기획사1급, 컨벤션기획사2급
 [광업자원] 화약류관리기술사, 화약류관리기사, 화약류관리산업기사, 화약취급기능사
 [교육·자연과학·사회과학] 이러닝운영관리사
@@ -72,15 +72,15 @@ QNET_CERTS = """
 [환경·에너지] 기상예보기술사, 대기관리기술사, 소음진동기술사, 수질관리기술사, 자연환경관리기술사, 토양환경기술사, 폐기물처리기술사, 에너지관리기능장, 기상감정기사, 기상기사, 대기환경기사, 생물분류기사(동물), 생물분류기사(식물), 소음진동기사, 수질환경기사, 신재생에너지발전설비기사(태양광), 에너지관리기사, 온실가스관리기사, 자연생태복원기사, 토양환경기사, 폐기물처리기사, 환경위해관리기사, 대기환경산업기사, 소음진동산업기사, 수질환경산업기사, 신재생에너지발전설비산업기사(태양광), 에너지관리산업기사, 자연생태복원산업기사, 폐기물처리산업기사, 신재생에너지발전설비기능사(태양광), 에너지관리기능사, 환경기능사
 """
 
-def get_todays_laws(api_key, target_date):
+def get_base_laws():
     all_laws_dict = {}
-    search_date_range = f"{target_date}~{target_date}"
-    print(f"\n📅 [{target_date}] 법제처 데이터를 수집합니다...")
+    print(f"\n📅 [V25] {TARGET_DATE} 법제처 국가법령 데이터를 수집합니다...")
     
     for target_type in ['law', 'histlaw']:
         page = 1
         while True:
-            search_url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={api_key}&target={target_type}&type=XML&efYd={search_date_range}&display=100&page={page}"
+            # efYd=TARGET_DATE 로 오늘 날짜 고정
+            search_url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={LAW_API_KEY}&target={target_type}&type=XML&efYd={TARGET_DATE}&display=100&page={page}"
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
                 if not response.text.strip() or response.status_code != 200:
@@ -97,7 +97,9 @@ def get_todays_laws(api_key, target_date):
                     
                     if not law_id or law_name in all_laws_dict: continue
                     
-                    detail_url = f"https://www.law.go.kr/DRF/lawService.do?OC={api_key}&target={target_type}&MST={law_id}&type=XML"
+                    law_link = f"https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq={law_id}"
+                    
+                    detail_url = f"https://www.law.go.kr/DRF/lawService.do?OC={LAW_API_KEY}&target={target_type}&MST={law_id}&type=XML"
                     detail_response = session.get(detail_url, headers=HEADERS, timeout=15)
                     detail_root = ET.fromstring(detail_response.text)
                     
@@ -110,9 +112,14 @@ def get_todays_laws(api_key, target_date):
                     stars = "\n".join([s.text.strip() for s in detail_root.findall('.//별표내용') if s.text])
                     full_text = f"[개정이유]\n{reason_text}\n[조문내용]\n{body_text}\n[별표]\n{stars}"[:20000]
                     
-                    all_laws_dict[law_name] = {"법령명": law_name, "시행일자": enforce_date, "원본": full_text}
+                    all_laws_dict[law_name] = {
+                        "법령명": law_name, 
+                        "시행일자": enforce_date, 
+                        "원본": full_text,
+                        "링크": law_link
+                    }
                     print(f"  📥 수집 중: {law_name}")
-                    time.sleep(0.2)
+                    time.sleep(0.1) # 유료 유저니까 속도 업!
                 
                 if len(law_nodes) < 100: break
                 page += 1
@@ -123,160 +130,183 @@ def get_todays_laws(api_key, target_date):
 def apply_excel_formatting(filename, df_summary, df_high, df_simple):
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='총괄현황표', index=False)
-        cols = ["시행일자", "법령명", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세"]
+        cols = ["시행일자", "법령명", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", "법령 링크"]
+        
         if df_high.empty: df_high = pd.DataFrame(columns=cols)
         if df_simple.empty: df_simple = pd.DataFrame(columns=cols)
         
-        df_high.to_excel(writer, sheet_name='활용 및 관련 높은 법령', index=False)
+        df_high.to_excel(writer, sheet_name='연관 높은 법령', index=False)
         df_simple.to_excel(writer, sheet_name='국가기술자격 관계 법령(단순 관련)', index=False)
     
     wb = load_workbook(filename)
-    for sheet_name in ['활용 및 관련 높은 법령', '국가기술자격 관계 법령(단순 관련)']:
+    for sheet_name in ['연관 높은 법령', '국가기술자격 관계 법령(단순 관련)']:
         ws = wb[sheet_name]
         for i in range(1, len(cols) + 1):
             ws.cell(row=1, column=i).font = Font(bold=True)
             ws.cell(row=1, column=i).fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-        for col in ['B', 'C', 'D', 'E', 'F']:
-            ws.column_dimensions[col].width = 45
+        
+        widths = {'A':15, 'B':45, 'C':45, 'D':45, 'E':20, 'F':80, 'G':50}
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
+            
         for row in ws.iter_rows():
             for cell in row:
                 cell.alignment = Alignment(wrap_text=True, vertical='center')
     wb.save(filename)
 
-def send_naver_email(filename, total, high_cnt, simple_cnt):
-    print("\n📧 네이버 메일 발송 준비...")
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = f"🤖 [일일 보고] {FILE_PREFIX} 국가기술자격 관계 법령 분석"
+def run_ai_analysis(law, attempt_count=5):
+    # V25 족쇄 없는 Pro 엔진 프롬프트
+    prompt = f"""
+    당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
     
-    body = f"""오늘 시행법령 총 {total}건 분석 완료!
-
-📊 분석 결과 요약
-- 활용 및 관련 높은 법령: {high_cnt}건
-- 단순 관련 법령: {simple_cnt}건
-
-첨부된 엑셀 보고서의 시트를 확인해 주십시오."""
-    msg.attach(MIMEText(body, 'plain'))
+    [491개 자격 사전 (직무분야별)] 
+    {QNET_CERTS}
     
-    with open(filename, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(filename)}")
-        msg.attach(part)
-    try:
-        server = smtplib.SMTP('smtp.naver.com', 587)
-        server.starttls()
-        server.login(SENDER_EMAIL.split('@')[0], EMAIL_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        print("✅ 네이버 메일 발송 성공! 메일함을 확인하세요.")
-    except Exception as e:
-        print(f"❌ 이메일 발송 실패: {e}")
+    [법령명] {law['법령명']}
+    [내용] {law['원본']}
 
-def main():
-    laws = get_todays_laws(LAW_API_KEY, TARGET_DATE)
-    if not laws: 
-        print("오늘은 새로 시행되는 법령이 없습니다. 푹 쉬십시오!")
-        return
+    [판정 가이드라인]
+    1. 분류 기준: '연관높음', '단순관련', '일반' 중 택1
+    2. 활용도_구분: '연관높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택.
     
-    high_impact_laws = []
-    simple_related_laws = []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V23: 365일 무조건 발송 통계 패치) 시작...")
+    🔥 [작성 가이드라인: 주요 제·개정내용 (요약)] 🔥
+    - 오직 개정된 조항과 객관적인 팩트만 글머리 기호('-')를 사용하여 나열하십시오.
+
+    🔥 [작성 가이드라인: 활용도 분석 상세] 🔥
+    - [분량 제한 없음] 전문가의 시선에서 최대한 깊이 있고 논리적으로 심층 분석하십시오.
+    - ① 개정 배경, ② 방향성, ③ 활용도 파급효과에 집중하십시오.
+
+    [🚨 JSON 작성 절대 규칙]
+    - 큰따옴표(") 절대 금지 (작은따옴표 ' 로 대체)
+    - 실제 엔터 금지 (텍스트 '\\n' 기호 사용)
+    - 축약 금지 (~~ 등 사용 금지)
+    - 종목 포맷팅: 각 직무분야 시작 시 'O ' 꼭지 사용 및 줄바꿈
+
+    [출력 JSON 형태]
+    {{
+        "분류": "연관높음/단순관련/일반",
+        "요약": "- 제O조: 팩트...\\n- 제O조: 팩트...",
+        "종목": "O 직무분야: 종목A, 종목B", 
+        "활용도_구분": "선택",
+        "활용도_분석": "① 개정 배경: ... \\n② 방향성: ... \\n③ 파급효과: ..."
+    }}
+    """
     
-    for idx, law in enumerate(laws):
-        print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
-        
-        prompt = f"""
-        당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다. 
-
-        [491개 자격 사전 (직무분야별)] 
-        {QNET_CERTS}
-        
-        [법령명] {law['법령명']}
-        [내용] {law['원본']}
-
-        [판정 가이드라인]
-        1. 분류 기준 (아래 3가지 중 택1):
-           - '활용높음': 자격증 소지자의 ①선임 의무 및 채용 가점, ②영업 인허가(면허/등록) 필수 인력 기준, ③정부 입찰(PQ) 심사 가점, ④타 자격 시험 및 법정 교육 면제, ⑤병역특례(산업기능요원 등), ⑥보수(수당) 및 승진 우대 조항이 신설/강화되거나, ⑦협회 기술자(기술인) 등급 산정에 연계되거나, ⑧경쟁 자격(타 자격) 우대로 인해 국가기술자격의 활용도가 상대적으로 하락한 경우
-           - '단순관련': 국가기술자격(또는 축약명칭)이 법령에 언급되나, 위 '활용높음' 요건에 해당하지 않는 단순 행정절차 변경, 위원회 자격 요건, 기존 목록의 단순 유지 등 활용도에 직접적 변화가 없는 경우
-           - '일반': 위 491개 자격증과 전혀 무관한 경우
-        2. 활용도_구분: '활용높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택. '단순관련'은 무조건 [변동 없음]으로 고정할 것.
-        3. (경쟁 자격 하락): 나무의사 등 타 자격에 새로운 혜택 부여 시 해당 직무분야 국가기술자격의 활용도가 하락('소폭/대폭 감소')한 것으로 간주.
-        4. (명칭 축약 인식): 법령(또는 별표)에서 자격증의 등급(기술사, 기사 등)을 생략하고 "산업위생관리", "공조냉동", "일반기계"처럼 '핵심 직무 명칭'만 기재하는 관행이 매우 많습니다. 제시된 [491개 자격 사전]의 종목명 앞부분(핵심 명칭)과 일치한다면 이를 명확한 국가기술자격 명시로 100% 인정하고 분석하십시오.
-        5. (협회 기술자/기술인 등급 연계): 특정 산업 분야의 "기술자" 또는 "기술인" 제도가 신설되거나 등급 체계가 개편되는 경우, 이는 해당 분야 국가기술자격증의 수요 상승으로 이어지므로 '소폭/대폭 증가'로 분석하십시오.
-
-        [🚨 JSON 작성 절대 규칙]
-        1. 출력은 단 1개의 JSON 객체({{ }})만. 
-        2. "활용도_분석"에 상세 보고서를 작성하되, 내용 안에 절대 큰따옴표(")나 줄바꿈(Enter) 금지. 작은따옴표(')와 '\\n' 사용.
-
-        [출력 JSON 형태]
-        {{
-            "분류": "'활용높음', '단순관련', '일반' 중 택 1",
-            "요약": "법령 핵심 요약",
-            "종목": "매칭된 직무분야 및 자격증 명칭",
-            "활용도_구분": "5단계 중 선택",
-            "활용도_분석": "500자 상세 보고서"
-        }}
-        """
+    for attempt in range(attempt_count):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.5-pro', # Pro 엔진 사용
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    max_output_tokens=8192
-                )
+                config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=8192)
             )
             raw_text = response.text.strip()
-            
             if raw_text.startswith("```"):
                 raw_text = raw_text.strip("`").strip()
-                if raw_text.lower().startswith("json"):
-                    raw_text = raw_text[4:].strip()
+                if raw_text.lower().startswith("json"): raw_text = raw_text[4:].strip()
             
-            try: data = json.loads(raw_text, strict=False)
-            except json.JSONDecodeError:
-                try: data = json.loads(f"[{raw_text}]", strict=False)
-                except: data = {}
-            
+            data = json.loads(raw_text, strict=False)
             if isinstance(data, list): data = data[0] if len(data) > 0 else {}
             
-            cat = data.get("분류", "")
-            law_info = {
+            return True, data.get("분류", ""), {
                 "시행일자": law["시행일자"],
                 "법령명": law["법령명"],
                 "주요 제·개정내용": data.get("요약", "요약 없음"),
                 "법령 관련 국가기술자격 종목": data.get("종목", "없음"),
                 "활용도 분석 구분": data.get("활용도_구분", "분류 불가"),
-                "활용도 분석 상세": data.get("활용도_분석", "분석 불가")
+                "활용도 분석 상세": data.get("활용도_분석", "분석 불가"),
+                "법령 링크": law["링크"]
             }
+        except Exception as e:
+            if attempt < attempt_count - 1: 
+                wait_time = 10 * (attempt + 1) # 에러 시에만 기다림
+                time.sleep(wait_time)
+            else: return False, "", {"error": str(e)}
+    return False, "", {"error": "재시도 초과"}
 
-            if cat == "활용높음":
-                high_impact_laws.append(law_info)
-                print("🔥 [활용높음]")
-            elif cat == "단순관련":
-                simple_related_laws.append(law_info)
-                print("🟡 [단순관련]")
-            else:
-                print("❌ [패스]")
-                
-        except Exception as e: 
-            print(f"⚠️ [분석 실패] {e}")
+def send_email(filename):
+    if not all([SENDER_EMAIL, EMAIL_PASSWORD, RECEIVER_EMAIL]):
+        print("이메일 설정이 누락되었습니다.")
+        return
+
+    msg = MIMEMultipart()
+    msg['From'] = f"국가기술자격 법령 봇 <{SENDER_EMAIL}>"
+    msg['To'] = RECEIVER_EMAIL
+    msg['Subject'] = f"[보고서] {FILE_PREFIX} 국가기술자격 관련 법령 모니터링 결과"
+
+    body = f"""
+안녕하세요, 선생님! 
+
+요청하신 {FILE_PREFIX} 자 시행 법령 모니터링 결과 보고서를 보내드립니다.
+
+이번 분석은 [Gemini 2.5 Pro] 엔진을 사용하여 
+글자 수 제한 없이 심층적인 효용성 분석을 수행한 V25 버전 결과물입니다.
+
+상세 내용은 첨부된 엑셀 파일을 확인해 주시기 바랍니다.
+
+감사합니다.
+    """
+    msg.attach(MIMEText(body, 'plain'))
+
+    with open(filename, "rb") as attachment:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(attachment.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(filename)}")
+        msg.attach(part)
+
+    try:
+        server = smtplib.SMTP('smtp.naver.com', 587) # 네이버 기준, 지메일은 smtp.gmail.com
+        server.starttls()
+        server.login(SENDER_EMAIL, EMAIL_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        server.quit()
+        print(f"📧 이메일 발송 완료! ({RECEIVER_EMAIL})")
+    except Exception as e:
+        print(f"이메일 발송 실패: {e}")
+
+def main():
+    laws = get_base_laws()
+    if not laws:
+        print("오늘 시행되는 법령이 없습니다.")
+        return
+    
+    high_impact_laws, simple_related_laws, failed_queue = [], [], []
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_GitHub) 시작...")
+    
+    for idx, law in enumerate(laws):
+        print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
+        success, cat, law_info = run_ai_analysis(law)
         
+        if success:
+            if cat == "연관높음": high_impact_laws.append(law_info); print("🔥")
+            elif cat == "단순관련": simple_related_laws.append(law_info); print("🟡")
+            else: print("❌")
+        else: 
+            failed_queue.append(law)
+            print(f"⏩ [실패 원인: {law_info.get('error', '알 수 없음')}]")
+        
+        # 유료 유저지만 1분에 360회 제한이 있으므로, 
+        # 아주 미세한 간격(1~2초)만 줘서 서버를 안정시킵니다.
+        time.sleep(2) 
+            
+    if failed_queue:
+        print("\n🚑 패자부활전 시작...")
+        time.sleep(15)
+        for law in failed_queue:
+            success, cat, law_info = run_ai_analysis(law, 3)
+            if success:
+                if cat == "연관높음": high_impact_laws.append(law_info)
+                elif cat == "단순관련": simple_related_laws.append(law_info)
+    
     df_high = pd.DataFrame(high_impact_laws)
     df_simple = pd.DataFrame(simple_related_laws)
-    df_summary = pd.DataFrame({
-        "구분": ["총 시행법령", "활용 및 관련 높은 법령", "단순 관련 법령"], 
-        "건수": [len(laws), len(high_impact_laws), len(simple_related_laws)]
-    })
+    df_summary = pd.DataFrame({"구분": ["총 시행법령", "연관높음", "단순관련"], "건수": [len(laws), len(high_impact_laws), len(simple_related_laws)]})
     
-    # [V23 수정] 관련 법령 건수에 상관없이 무조건 엑셀을 만들고 메일을 보냅니다!
-    fname = f"HRD_Daily_Report_{TARGET_DATE}.xlsx"
+    fname = f"V25_법령모니터링_{TARGET_DATE}.xlsx"
     apply_excel_formatting(fname, df_summary, df_high, df_simple)
-    send_naver_email(fname, len(laws), len(high_impact_laws), len(simple_related_laws))
-    print(f"\n✅ 일일 보고서({len(laws)}건 집계 완료) 생성 및 메일 발송이 정상적으로 완료되었습니다.")
+    
+    print(f"\n✅ 분석 완료! 파일명: {fname}")
+    send_email(fname)
 
 if __name__ == "__main__":
     main()
