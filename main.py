@@ -6,25 +6,19 @@ from google.genai import types
 import time
 import os
 import json
-import smtplib
 from datetime import datetime, timedelta, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, PatternFill, Font
 
 # ==========================================
-# 1. 환경 변수 (GitHub Secrets에서 가져옴)
+# 1. 환경 변수 및 설정
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL")      
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")  
-RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
+# 🔥 선생님께서 주신 Make.com Webhook URL
+WEBHOOK_URL = "https://hook.eu1.make.com/okarw4rcy9yusgxj44ogornxbdj8r51u"
 
 # ==========================================
 # 2. 날짜 및 신형 AI 세팅
@@ -32,9 +26,7 @@ RECEIVER_EMAIL = os.environ.get("RECEIVER_EMAIL")
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
 TARGET_DATE = today.strftime("%Y%m%d") 
-# 🔥 [핵심 수정] 하루만 검색하더라도 반드시 시작~끝 날짜 범위를 물결표(~)로 지정해야 합니다.
-SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
-FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
+SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" # 물결표 방파제 유지
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -46,7 +38,7 @@ session.mount('http://', adapter)
 session.mount('https://', adapter)
 
 # ==========================================
-# 3. 공단 전용 491개 자격 종목 사전
+# 3. 공단 전용 491개 자격 종목 사전 (V25 버전)
 # ==========================================
 QNET_CERTS = """
 [건설] 금속재창호기능사, 플라스틱창호기능사, 건축구조기술사, 건축기계설비기술사, 건축시공기술사, 건축품질시험기술사, 교통기술사, 농어업토목기술사, 도로및공항기술사, 도시계획기술사, 상하수도기술사, 수자원개발기술사, 조경기술사, 지적기술사, 지질및지반기술사, 철도기술사, 측량및지형공간정보기술사, 토목구조기술사, 토목시공기술사, 토목품질시험기술사, 토질및기초기술사, 항만및해안기술사, 해양기술사, 건축목재시공기능장, 건축일반시공기능장, 배관기능장, 잠수기능장, 건설재료시험기사, 건축기사, 건축설비기사, 교통기사, 도시계획기사, 실내건축기사, 응용지질기사, 조경기사, 지적기사, 철도토목기사, 측량및지형공간정보기사, 콘크리트기사, 토목기사, 항로표지기사, 해양공학기사, 해양자원개발기사, 해양환경기사, 건설재료시험산업기사, 건축목공산업기사, 건축산업기사, 건축설비산업기사, 건축일반시공산업기사, 공간정보융합산업기사, 교통산업기사, 방수산업기사, 배관산업기사, 실내건축산업기사, 잠수산업기사, 조경산업기사, 지적산업기사, 측량및지형공간정보산업기사, 콘크리트산업기사, 토목산업기사, 항로표지산업기사, 해양조사산업기사, 거푸집기능사, 건설재료시험기능사, 건축도장기능사, 건축목공기능사, 공간정보융합기능사, 굴착기운전기능사, 기중기운전기능사, 도배기능사, 도화기능사, 로더운전기능사, 롤러운전기능사, 미장기능사, 방수기능사, 배관기능사, 불도저운전기능사, 비계기능사, 석공기능사, 실내건축기능사, 양화장치운전기능사, 온수온돌기능사, 유리시공기능사, 잠수기능사, 전산응용건축제도기능사, 전산응용토목제도기능사, 조경기능사, 조적기능사, 지게차운전기능사, 지도제작기능사, 지적기능사, 천공기운전기능사, 천장크레인운전기능사, 철근기능사, 철도토목기능사, 측량기능사, 컨테이너크레인운전기능사, 콘크리트기능사, 타워크레인운전기능사, 타일기능사, 항공사진기능사, 항로표지기능사
@@ -81,7 +73,6 @@ def get_base_laws():
     for target_type in ['law', 'histlaw']:
         page = 1
         while True:
-            # 🔥 SEARCH_DATE_RANGE (시작~끝)를 사용하여 오늘 시행 법령만 정확히 필터링합니다.
             search_url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={LAW_API_KEY}&target={target_type}&type=XML&efYd={SEARCH_DATE_RANGE}&display=100&page={page}"
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
@@ -157,7 +148,7 @@ def apply_excel_formatting(filename, df_summary, df_high, df_simple):
     wb.save(filename)
 
 def run_ai_analysis(law, attempt_count=5):
-    # V25 족쇄 해제 버전 수석 연구원 프롬프트
+    # V25 수석 연구원 프롬프트 (족쇄 해제 버전)
     prompt = f"""
     당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
     
@@ -178,20 +169,20 @@ def run_ai_analysis(law, attempt_count=5):
     - 실제 개정된 조항과 객관적인 팩트만 글머리 기호('-')를 사용하여 나열하십시오.
 
     🔥 [작성 가이드라인: 활용도 분석 상세] 🔥
-    - [분량 제한 없음] 글자 수에 구애받지 말고 전문가의 시선에서 최대한 깊이 있고 논리적으로 심층 분석하십시오.
+    - [분량 제한 없음] 전문가의 시선에서 최대한 깊이 있고 논리적으로 심층 분석하십시오.
     - ① 개정 배경, ② 방향성, ③ 파급효과에 집중하십시오.
 
-    [🚨 JSON 작성 절대 규칙 - 시스템 에러 방지용]
+    [🚨 JSON 작성 절대 규칙]
     1. 출력은 단 1개의 JSON 객체({{ }})만.
-    2. (큰따옴표 전면 금지) 모든 텍스트 값 내부에 절대 큰따옴표(")를 사용하지 마십시오. 강조는 작은따옴표(') 사용.
-    3. (실제 엔터키 금지) 텍스트 내부 실제 줄바꿈 대신 '\\n' 기호를 입력하십시오.
-    4. (종목 포맷팅) 각 직무분야 시작 부분에 알파벳 'O ' 꼭지를 쓰고, 직무분야가 바뀔 때마다 '\\n'을 넣어 분리하십시오.
+    2. (큰따옴표 전면 금지) 모든 텍스트 내부에 절대 큰따옴표(") 금지. 강조는 작은따옴표(') 사용.
+    3. (실제 엔터키 금지) 텍스트 내부 실제 줄바꿈 대신 '\\n' 기호 사용.
+    4. (종목 포맷팅) 각 직무분야 시작 시 'O ' 꼭지 사용 및 줄바꿈 기호('\\n') 사용.
 
     [출력 JSON 형태]
     {{
         "분류": "'연관높음', '단순관련', '일반' 중 택 1",
         "요약": "- 제O조: 객관적 팩트\\n- 제O조: 객관적 팩트",
-        "종목": "O 직무분야1: 종목A, 종목B\\nO 직무분야2: 종목C", 
+        "종목": "O 직무분야: 종목A, 종목B\\nO 직무분야2: 종목C", 
         "활용도_구분": "선택",
         "활용도_분석": "① 개정 배경: ... \\n② 방향성: ... \\n③ 파급효과: ..."
     }}
@@ -199,7 +190,7 @@ def run_ai_analysis(law, attempt_count=5):
     
     for attempt in range(attempt_count):
         try:
-            # 🔥 수석 컨설턴트 gemini-2.5-pro 엔진 사용
+            # 🔥 Gemini 2.5 Pro 엔진 사용
             response = client.models.generate_content(
                 model='gemini-2.5-pro',
                 contents=prompt,
@@ -213,7 +204,7 @@ def run_ai_analysis(law, attempt_count=5):
             data = json.loads(raw_text, strict=False)
             if isinstance(data, list): data = data[0] if len(data) > 0 else {}
             
-            law_info = {
+            return True, data.get("분류", ""), {
                 "시행일자": law["시행일자"],
                 "법령명": law["법령명"],
                 "주요 제·개정내용": data.get("요약", "요약 없음"),
@@ -222,75 +213,24 @@ def run_ai_analysis(law, attempt_count=5):
                 "활용도 분석 상세": data.get("활용도_분석", "분석 불가"),
                 "법령 링크": law["링크"]
             }
-            return True, data.get("분류", ""), law_info
-            
         except Exception as e:
-            # 유료 API지만 서버가 바쁘면 지수 백오프로 버팁니다.
             if attempt < attempt_count - 1: 
                 wait_time = 15 * (attempt + 1)
-                print(f"\n  ⏳ [서버 지연] {wait_time}초 대기 후 재시도... ({attempt+1}/{attempt_count})")
                 time.sleep(wait_time)
-            else: 
-                return False, "", {"error": str(e)}
-                
+            else: return False, "", {"error": str(e)}
     return False, "", {"error": "재시도 초과"}
-
-def send_email(filename):
-    if not all([SENDER_EMAIL, EMAIL_PASSWORD, RECEIVER_EMAIL]):
-        print("이메일 설정(Secrets)이 확인되지 않아 메일 발송을 건너뜁니다.")
-        return
-
-    msg = MIMEMultipart()
-    msg['From'] = f"국가기술자격 법령 모니터링 봇 <{SENDER_EMAIL}>"
-    msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = f"[보고서] {FILE_PREFIX} 자 시행 법령 모니터링 분석 결과"
-
-    body = f"""
-안녕하세요, 선생님! 
-
-요청하신 {FILE_PREFIX} 자 시행 법령 모니터링 분석 결과 보고서를 송부드립니다.
-
-[V25 업데이트 사항]
-1. 분석 엔진 업그레이드: Gemini 2.5 Pro (수석 컨설턴트급 추론)
-2. 분석 깊이 강화: 분량 제한을 해제하여 개정 배경부터 파급효과까지 심층 분석 수행
-3. 가독성 개선: 엑셀 내 하이퍼링크 및 종목별 자동 줄바꿈 적용
-
-상세 분석 결과는 첨부된 엑셀 파일을 참고하시기 바랍니다.
-
-감사합니다.
-    """
-    msg.attach(MIMEText(body, 'plain'))
-
-    with open(filename, "rb") as attachment:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(attachment.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f"attachment; filename= {os.path.basename(filename)}")
-        msg.attach(part)
-
-    try:
-        # 네이버 메일 기준 (지메일 사용 시 smtp.gmail.com)
-        server = smtplib.SMTP('smtp.naver.com', 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, EMAIL_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-        server.quit()
-        print(f"📧 이메일 발송 성공! ({RECEIVER_EMAIL})")
-    except Exception as e:
-        print(f"📧 이메일 발송 실패: {e}")
 
 def main():
     laws = get_base_laws()
     if not laws:
-        print("오늘 시행되는 법령이 없어 분석을 종료합니다.")
+        print("오늘 시행되는 법령이 없습니다.")
         return
     
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_Full) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_Webhook) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
-        
         success, cat, law_info = run_ai_analysis(law)
         
         if success:
@@ -299,14 +239,13 @@ def main():
             else: print("❌")
         else: 
             failed_queue.append(law)
-            print(f"⏩ [분석 실패 원인: {law_info.get('error', '알 수 없음')}]")
+            print(f"⏩ [실패 원인: {law_info.get('error', '알 수 없음')}]")
         
-        # 유료 유저 트래픽 보호용 미세 휴식
-        time.sleep(2)
+        time.sleep(2) # 유료 유저 트래픽 보호용
             
     if failed_queue:
-        print("\n🚑 패자부활전(재분석)을 진행합니다...")
-        time.sleep(10)
+        print("\n🚑 패자부활전 시작...")
+        time.sleep(15)
         for law in failed_queue:
             success, cat, law_info = run_ai_analysis(law, 3)
             if success:
@@ -317,12 +256,27 @@ def main():
     df_simple = pd.DataFrame(simple_related_laws)
     df_summary = pd.DataFrame({"구분": ["총 시행법령", "연관높음", "단순관련"], "건수": [len(laws), len(high_impact_laws), len(simple_related_laws)]})
     
-    # 저장 경로: 현재 폴더에 저장
     fname = f"V25_법령모니터링_{TARGET_DATE}.xlsx"
     apply_excel_formatting(fname, df_summary, df_high, df_simple)
     
-    print(f"\n✅ 분석 완주! 파일 생성됨: {fname}")
-    send_email(fname)
+    print(f"\n✅ 분석 완료! 파일명: {fname}")
+
+    # ==========================================
+    # 🔥 [중심 수정] Make.com Webhook으로 전송
+    # ==========================================
+    print(f"🚀 Make.com Webhook으로 전송 중...")
+    try:
+        with open(fname, 'rb') as f:
+            # 파일을 폼 데이터 형식으로 전송
+            files = {'file': (fname, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
+            response = requests.post(WEBHOOK_URL, files=files)
+            
+        if response.status_code == 200:
+            print(f"✅ Webhook 전송 성공! (HTTP 200)")
+        else:
+            print(f"❌ Webhook 전송 실패: HTTP {response.status_code}")
+    except Exception as e:
+        print(f"❌ Webhook 전송 에러 발생: {e}")
 
 if __name__ == "__main__":
     main()
