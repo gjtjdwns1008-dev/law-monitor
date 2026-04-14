@@ -17,7 +17,6 @@ from openpyxl.styles import Alignment, PatternFill, Font
 # ==========================================
 LAW_API_KEY = os.environ.get("LAW_API_KEY")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-# 🔥 선생님께서 주신 Make.com Webhook URL
 WEBHOOK_URL = "https://hook.eu1.make.com/okarw4rcy9yusgxj44ogornxbdj8r51u"
 
 # ==========================================
@@ -26,7 +25,8 @@ WEBHOOK_URL = "https://hook.eu1.make.com/okarw4rcy9yusgxj44ogornxbdj8r51u"
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
 TARGET_DATE = today.strftime("%Y%m%d") 
-SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" # 물결표 방파제 유지
+SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
+FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -38,7 +38,7 @@ session.mount('http://', adapter)
 session.mount('https://', adapter)
 
 # ==========================================
-# 3. 공단 전용 491개 자격 종목 사전 (V25 버전)
+# 3. 공단 전용 491개 자격 종목 사전
 # ==========================================
 QNET_CERTS = """
 [건설] 금속재창호기능사, 플라스틱창호기능사, 건축구조기술사, 건축기계설비기술사, 건축시공기술사, 건축품질시험기술사, 교통기술사, 농어업토목기술사, 도로및공항기술사, 도시계획기술사, 상하수도기술사, 수자원개발기술사, 조경기술사, 지적기술사, 지질및지반기술사, 철도기술사, 측량및지형공간정보기술사, 토목구조기술사, 토목시공기술사, 토목품질시험기술사, 토질및기초기술사, 항만및해안기술사, 해양기술사, 건축목재시공기능장, 건축일반시공기능장, 배관기능장, 잠수기능장, 건설재료시험기사, 건축기사, 건축설비기사, 교통기사, 도시계획기사, 실내건축기사, 응용지질기사, 조경기사, 지적기사, 철도토목기사, 측량및지형공간정보기사, 콘크리트기사, 토목기사, 항로표지기사, 해양공학기사, 해양자원개발기사, 해양환경기사, 건설재료시험산업기사, 건축목공산업기사, 건축산업기사, 건축설비산업기사, 건축일반시공산업기사, 공간정보융합산업기사, 교통산업기사, 방수산업기사, 배관산업기사, 실내건축산업기사, 잠수산업기사, 조경산업기사, 지적산업기사, 측량및지형공간정보산업기사, 콘크리트산업기사, 토목산업기사, 항로표지산업기사, 해양조사산업기사, 거푸집기능사, 건설재료시험기능사, 건축도장기능사, 건축목공기능사, 공간정보융합기능사, 굴착기운전기능사, 기중기운전기능사, 도배기능사, 도화기능사, 로더운전기능사, 롤러운전기능사, 미장기능사, 방수기능사, 배관기능사, 불도저운전기능사, 비계기능사, 석공기능사, 실내건축기능사, 양화장치운전기능사, 온수온돌기능사, 유리시공기능사, 잠수기능사, 전산응용건축제도기능사, 전산응용토목제도기능사, 조경기능사, 조적기능사, 지게차운전기능사, 지도제작기능사, 지적기능사, 천공기운전기능사, 천장크레인운전기능사, 철근기능사, 철도토목기능사, 측량기능사, 컨테이너크레인운전기능사, 콘크리트기능사, 타워크레인운전기능사, 타일기능사, 항공사진기능사, 항로표지기능사
@@ -68,7 +68,7 @@ QNET_CERTS = """
 
 def get_base_laws():
     all_laws_dict = {}
-    print(f"\n📅 [V25] {SEARCH_DATE_RANGE} 법제처 국가법령 데이터를 수집합니다...")
+    print(f"\n📅 [V25_Flash] {SEARCH_DATE_RANGE} 법제처 국가법령 데이터를 수집합니다...")
     
     for target_type in ['law', 'histlaw']:
         page = 1
@@ -148,9 +148,8 @@ def apply_excel_formatting(filename, df_summary, df_high, df_simple):
     wb.save(filename)
 
 def run_ai_analysis(law, attempt_count=5):
-    # V25 수석 연구원 프롬프트 (족쇄 해제 버전)
     prompt = f"""
-    당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
+    당신은 한국산업인력공단의 국가기술자격 규제 심사 연구원입니다.
     
     [491개 자격 사전 (직무분야별)] 
     {QNET_CERTS}
@@ -169,7 +168,7 @@ def run_ai_analysis(law, attempt_count=5):
     - 실제 개정된 조항과 객관적인 팩트만 글머리 기호('-')를 사용하여 나열하십시오.
 
     🔥 [작성 가이드라인: 활용도 분석 상세] 🔥
-    - [분량 제한 없음] 전문가의 시선에서 최대한 깊이 있고 논리적으로 심층 분석하십시오.
+    - [1000자 이내 제한] 1000자 이내로 간결하고 명확하게 분석하십시오.
     - ① 개정 배경, ② 방향성, ③ 파급효과에 집중하십시오.
 
     [🚨 JSON 작성 절대 규칙]
@@ -190,9 +189,9 @@ def run_ai_analysis(law, attempt_count=5):
     
     for attempt in range(attempt_count):
         try:
-            # 🔥 Gemini 2.5 Pro 엔진 사용
+            # 🔥 통장 지킴이 세팅: Pro 모델 대신 Flash 모델 사용!
             response = client.models.generate_content(
-                model='gemini-2.5-pro',
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=8192)
             )
@@ -220,14 +219,50 @@ def run_ai_analysis(law, attempt_count=5):
             else: return False, "", {"error": str(e)}
     return False, "", {"error": "재시도 초과"}
 
+
+# ==========================================
+# 🔥 [스마트 웹훅 함수] 엑셀이 있으면 같이, 없으면 데이터만 쏨!
+# ==========================================
+def send_webhook(fname, total, high, simple):
+    summary_data = {
+        "date": FILE_PREFIX, 
+        "total": total,
+        "high": high,
+        "simple": simple
+    }
+    
+    print(f"\n🚀 Make.com Webhook으로 전송 중...")
+    try:
+        # 파일 이름이 있고, 실제로 그 파일이 존재하면 (법령이 1건 이상일 때)
+        if fname and os.path.exists(fname):
+            with open(fname, 'rb') as f:
+                files = {'file': (os.path.basename(fname), f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
+                response = requests.post(WEBHOOK_URL, data=summary_data, files=files)
+                print(f"📦 [택배+포스트잇 발송] 엑셀 파일과 요약 데이터를 함께 보냈습니다!")
+        # 파일이 없으면 (법령이 0건일 때)
+        else:
+            response = requests.post(WEBHOOK_URL, data=summary_data)
+            print(f"✉️ [포스트잇 발송] 법령 0건! 쓰레기 파일 생성 없이 생존신고 데이터만 보냈습니다!")
+            
+        if response.status_code == 200:
+            print(f"✅ Webhook 수신 완료 (HTTP 200)")
+        else:
+            print(f"❌ Webhook 전송 실패: HTTP {response.status_code}")
+    except Exception as e:
+        print(f"❌ Webhook 전송 에러 발생: {e}")
+
+
 def main():
     laws = get_base_laws()
+    
+    # 🔥 [중요 수정] 법령이 0건일 때 바로 종료하지 않고 스마트 웹훅(0건)을 날립니다!
     if not laws:
-        print("오늘 시행되는 법령이 없습니다.")
+        print("오늘 시행되는 법령이 없습니다. 생존 신고용 웹훅만 전송합니다.")
+        send_webhook(None, 0, 0, 0) 
         return
     
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_Webhook) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_Webhook_Flash) 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
@@ -261,22 +296,8 @@ def main():
     
     print(f"\n✅ 분석 완료! 파일명: {fname}")
 
-    # ==========================================
-    # 🔥 [중심 수정] Make.com Webhook으로 전송
-    # ==========================================
-    print(f"🚀 Make.com Webhook으로 전송 중...")
-    try:
-        with open(fname, 'rb') as f:
-            # 파일을 폼 데이터 형식으로 전송
-            files = {'file': (fname, f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
-            response = requests.post(WEBHOOK_URL, files=files)
-            
-        if response.status_code == 200:
-            print(f"✅ Webhook 전송 성공! (HTTP 200)")
-        else:
-            print(f"❌ Webhook 전송 실패: HTTP {response.status_code}")
-    except Exception as e:
-        print(f"❌ Webhook 전송 에러 발생: {e}")
+    # 🔥 [정상 분석 완료 후] 엑셀 파일과 함께 요약 데이터를 쏩니다!
+    send_webhook(fname, len(laws), len(high_impact_laws), len(simple_related_laws))
 
 if __name__ == "__main__":
     main()
