@@ -6,6 +6,7 @@ from google.genai import types
 import time
 import os
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -68,7 +69,7 @@ QNET_CERTS = """
 
 def get_base_laws():
     all_laws_dict = {}
-    print(f"\n📅 [V25_Flash] {SEARCH_DATE_RANGE} 법제처 국가법령 데이터를 수집합니다...")
+    print(f"\n📅 [V26.4] {SEARCH_DATE_RANGE} 다중 조문 추출 모니터링 시작...")
     
     for target_type in ['law', 'histlaw']:
         page = 1
@@ -76,9 +77,7 @@ def get_base_laws():
             search_url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={LAW_API_KEY}&target={target_type}&type=XML&efYd={SEARCH_DATE_RANGE}&display=100&page={page}"
             try:
                 response = session.get(search_url, headers=HEADERS, timeout=15)
-                if not response.text.strip() or response.status_code != 200:
-                    break
-                    
+                if not response.text.strip() or response.status_code != 200: break
                 root = ET.fromstring(response.text)
                 law_nodes = root.findall('.//law')
                 if not law_nodes: break
@@ -87,11 +86,9 @@ def get_base_laws():
                     law_id = law.find('법령일련번호').text if law.find('법령일련번호') is not None else ""
                     law_name = law.find('법령명한글').text if law.find('법령명한글') is not None else "이름없음"
                     enforce_date = law.find('시행일자').text if law.find('시행일자') is not None else ""
-                    
                     if not law_id or law_name in all_laws_dict: continue
                     
                     law_link = f"https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq={law_id}"
-                    
                     detail_url = f"https://www.law.go.kr/DRF/lawService.do?OC={LAW_API_KEY}&target={target_type}&MST={law_id}&type=XML"
                     detail_response = session.get(detail_url, headers=HEADERS, timeout=15)
                     detail_root = ET.fromstring(detail_response.text)
@@ -105,26 +102,22 @@ def get_base_laws():
                     stars = "\n".join([s.text.strip() for s in detail_root.findall('.//별표내용') if s.text])
                     full_text = f"[개정이유]\n{reason_text}\n[조문내용]\n{body_text}\n[별표]\n{stars}"[:20000]
                     
-                    all_laws_dict[law_name] = {
-                        "법령명": law_name, 
-                        "시행일자": enforce_date, 
-                        "원본": full_text,
-                        "링크": law_link
-                    }
-                    print(f"  📥 수집 중: {law_name}")
+                    all_laws_dict[law_name] = {"법령명": law_name, "시행일자": enforce_date, "원본": full_text, "링크": law_link}
+                    print(f"  📥 수집: {law_name}")
                     time.sleep(0.1) 
-                
                 if len(law_nodes) < 100: break
                 page += 1
-            except Exception as e: 
-                break
+            except Exception: break
     return list(all_laws_dict.values())
 
 def apply_excel_formatting(filename, df_summary, df_high, df_simple):
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='총괄현황표', index=False)
-        cols = ["시행일자", "법령명", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", "법령 링크"]
-        
+        cols = [
+            "시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", 
+            "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", 
+            "근거 조문", "AI 신뢰도", "검토 필요", "조문별 다이렉트 링크"
+        ]
         if df_high.empty: df_high = pd.DataFrame(columns=cols)
         if df_simple.empty: df_simple = pd.DataFrame(columns=cols)
         
@@ -138,21 +131,23 @@ def apply_excel_formatting(filename, df_summary, df_high, df_simple):
             ws.cell(row=1, column=i).font = Font(bold=True)
             ws.cell(row=1, column=i).fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
         
-        widths = {'A':15, 'B':45, 'C':45, 'D':45, 'E':20, 'F':80, 'G':50}
-        for col, width in widths.items():
-            ws.column_dimensions[col].width = width
+        # 링크가 길어지므로 L열(링크 열) 너비를 70으로 대폭 늘림
+        widths = {'A':12, 'B':15, 'C':35, 'D':12, 'E':45, 'F':40, 'G':18, 'H':50, 'I':18, 'J':12, 'K':10, 'L':70}
+        for col, width in widths.items(): ws.column_dimensions[col].width = width
             
         for row in ws.iter_rows():
             for cell in row:
-                cell.alignment = Alignment(wrap_text=True, vertical='center')
+                # 가로/세로 모두 완벽한 중앙 정렬 적용 (엔터키 처리 포함)
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                
     wb.save(filename)
 
 def run_ai_analysis(law, attempt_count=5):
+    # 🔥 [수정] 프롬프트에 여러 개의 조문을 리스트(배열)로 추출하라고 명확히 지시
     prompt = f"""
     당신은 한국산업인력공단의 국가기술자격 규제 심사 연구원입니다.
     
-    [491개 자격 사전 (직무분야별)] 
-    {QNET_CERTS}
+    [491개 자격 사전] {QNET_CERTS}
     
     [법령명] {law['법령명']}
     [내용] {law['원본']}
@@ -163,33 +158,39 @@ def run_ai_analysis(law, attempt_count=5):
        - '단순관련': 법령에 명칭은 언급되나 실제 활용도 변화가 없는 경우
        - '일반': 자격증과 무관한 경우
     2. 활용도_구분: '연관높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택.
+    3. 소관부처: 법령 내용을 바탕으로 해당 법령을 소관하는 정부 부처명 추출
+    4. 개정유형: 법령의 제·개정 성격 추출 (예: 일부개정, 전부개정 등)
+    5. 조문리스트: 연관된 조문이 여러 개일 경우, 모두 추출하여 배열(리스트) 형태로 반환.
+       - 조문명: 예) "제23조의3"
+       - 숫자: 다이렉트 링크 생성용 (예: "23.3", "38.2")
+    6. AI_신뢰도: ('높음', '낮음' 중 택1)
+    7. 검토필요: 대폭 증가/감소 또는 신뢰도 낮음 시 'O', 그 외 'X'
     
     🔥 [작성 가이드라인: 주요 제·개정내용 (요약)] 🔥
     - 실제 개정된 조항과 객관적인 팩트만 글머리 기호('-')를 사용하여 나열하십시오.
 
     🔥 [작성 가이드라인: 활용도 분석 상세] 🔥
     - [1000자 이내 제한] 1000자 이내로 간결하고 명확하게 분석하십시오.
-    - ① 개정 배경, ② 방향성, ③ 파급효과에 집중하십시오.
 
     [🚨 JSON 작성 절대 규칙]
-    1. 출력은 단 1개의 JSON 객체({{ }})만.
-    2. (큰따옴표 전면 금지) 모든 텍스트 내부에 절대 큰따옴표(") 금지. 강조는 작은따옴표(') 사용.
-    3. (실제 엔터키 금지) 텍스트 내부 실제 줄바꿈 대신 '\\n' 기호 사용.
-    4. (종목 포맷팅) 각 직무분야 시작 시 'O ' 꼭지 사용 및 줄바꿈 기호('\\n') 사용.
+    1. 단 1개의 JSON 객체({{ }})만 출력. 내부 큰따옴표 금지, 줄바꿈은 \\n 사용.
 
     [출력 JSON 형태]
     {{
-        "분류": "'연관높음', '단순관련', '일반' 중 택 1",
+        "분류": "연관높음", "소관부처": "보건복지부", "개정유형": "일부개정",
         "요약": "- 제O조: 객관적 팩트\\n- 제O조: 객관적 팩트",
-        "종목": "O 직무분야: 종목A, 종목B\\nO 직무분야2: 종목C", 
-        "활용도_구분": "선택",
-        "활용도_분석": "① 개정 배경: ... \\n② 방향성: ... \\n③ 파급효과: ..."
+        "종목": "O 직무분야: 종목A", "활용도_구분": "소폭 증가",
+        "활용도_분석": "① 개정 배경: ...",
+        "조문리스트": [
+            {{"조문명": "제23조의3", "숫자": "23.3"}},
+            {{"조문명": "제38조의2", "숫자": "38.2"}}
+        ],
+        "AI_신뢰도": "높음", "검토필요": "X"
     }}
     """
     
     for attempt in range(attempt_count):
         try:
-            # 🔥 통장 지킴이 세팅: Pro 모델 대신 Flash 모델 사용!
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=prompt,
@@ -203,66 +204,93 @@ def run_ai_analysis(law, attempt_count=5):
             data = json.loads(raw_text, strict=False)
             if isinstance(data, list): data = data[0] if len(data) > 0 else {}
             
+            # 🔥 [핵심 추가] 여러 개의 조문을 받아와서 각각 엔터(줄바꿈)로 연결하는 로직
+            jomun_list = data.get("조문리스트", [])
+            if not isinstance(jomun_list, list): jomun_list = []
+            
+            links_str_list = []
+            names_str_list = []
+            
+            for j in jomun_list:
+                j_name = j.get("조문명", "확인불가")
+                names_str_list.append(j_name)
+                
+                # J23:3 형태로 변환
+                j_num = str(j.get("숫자", "")).strip().replace(".", ":")
+                anchor = f"#J{j_num}" if j_num else ""
+                direct_link_url = f"{law['링크']}{anchor}"
+                
+                # 조문명(엔터)URL 형태 생성
+                links_str_list.append(f"▶ {law['법령명']} {j_name}\n{direct_link_url}")
+            
+            # 조문이 여러 개면 콤마로 연결 (예: 제23조, 제38조)
+            final_jomun_names = ", ".join(names_str_list) if names_str_list else "조문 없음"
+            
+            # 링크 세트가 여러 개면 엔터 2개(\n\n)로 띄워서 예쁘게 정리
+            final_links_text = "\n\n".join(links_str_list) if links_str_list else "링크 없음"
+            
             return True, data.get("분류", ""), {
                 "시행일자": law["시행일자"],
+                "소관부처": data.get("소관부처", "알 수 없음"),
                 "법령명": law["법령명"],
+                "개정유형": data.get("개정유형", "알 수 없음"),
                 "주요 제·개정내용": data.get("요약", "요약 없음"),
                 "법령 관련 국가기술자격 종목": data.get("종목", "없음"),
                 "활용도 분석 구분": data.get("활용도_구분", "분류 불가"),
                 "활용도 분석 상세": data.get("활용도_분석", "분석 불가"),
-                "법령 링크": law["링크"]
+                "근거 조문": final_jomun_names,
+                "AI 신뢰도": data.get("AI_신뢰도", "평가 불가"),
+                "검토 필요": data.get("검토필요", "X"),
+                "조문별 다이렉트 링크": final_links_text  # 원본 텍스트(엔터 포함) 저장
             }
         except Exception as e:
+            error_msg = str(e)
             if attempt < attempt_count - 1: 
-                wait_time = 15 * (attempt + 1)
+                if "503" in error_msg or "429" in error_msg:
+                    wait_time = 30 * (attempt + 1)
+                    print(f"\n  🚨 [서버 혼잡] 구글 서버가 바쁩니다. {wait_time}초 강제 휴식 후 재시도... ({attempt+1}/{attempt_count})")
+                else:
+                    wait_time = 15 * (attempt + 1)
+                    print(f"\n  ⚠️ [일반 에러] {wait_time}초 대기 후 재시도... ({attempt+1}/{attempt_count})")
                 time.sleep(wait_time)
-            else: return False, "", {"error": str(e)}
+            else: 
+                return False, "", {"error": error_msg}
     return False, "", {"error": "재시도 초과"}
 
-
-# ==========================================
-# 🔥 [스마트 웹훅 함수] 엑셀이 있으면 같이, 없으면 데이터만 쏨!
-# ==========================================
-def send_webhook(fname, total, high, simple):
+def send_webhook(fname, total, high, simple, high_list, simple_list):
     summary_data = {
         "date": FILE_PREFIX, 
         "total": total,
         "high": high,
-        "simple": simple
+        "simple": simple,
+        "high_impact_laws": json.dumps(high_list, ensure_ascii=False),
+        "simple_related_laws": json.dumps(simple_list, ensure_ascii=False)
     }
     
-    print(f"\n🚀 Make.com Webhook으로 전송 중...")
+    print(f"\n🚀 Make.com Webhook으로 상세 리스트 전송 중...")
     try:
-        # 파일 이름이 있고, 실제로 그 파일이 존재하면 (법령이 1건 이상일 때)
         if fname and os.path.exists(fname):
             with open(fname, 'rb') as f:
                 files = {'file': (os.path.basename(fname), f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
                 response = requests.post(WEBHOOK_URL, data=summary_data, files=files)
-                print(f"📦 [택배+포스트잇 발송] 엑셀 파일과 요약 데이터를 함께 보냈습니다!")
-        # 파일이 없으면 (법령이 0건일 때)
+                print(f"📦 [택배 발송 완료]")
         else:
             response = requests.post(WEBHOOK_URL, data=summary_data)
-            print(f"✉️ [포스트잇 발송] 법령 0건! 쓰레기 파일 생성 없이 생존신고 데이터만 보냈습니다!")
+            print(f"✉️ [생존신고 발송 완료]")
             
-        if response.status_code == 200:
-            print(f"✅ Webhook 수신 완료 (HTTP 200)")
-        else:
-            print(f"❌ Webhook 전송 실패: HTTP {response.status_code}")
+        if response.status_code != 200:
+            print(f"❌ Webhook 실패: HTTP {response.status_code}")
     except Exception as e:
-        print(f"❌ Webhook 전송 에러 발생: {e}")
-
+        print(f"❌ Webhook 에러: {e}")
 
 def main():
     laws = get_base_laws()
-    
-    # 🔥 [중요 수정] 법령이 0건일 때 바로 종료하지 않고 스마트 웹훅(0건)을 날립니다!
     if not laws:
-        print("오늘 시행되는 법령이 없습니다. 생존 신고용 웹훅만 전송합니다.")
-        send_webhook(None, 0, 0, 0) 
+        send_webhook(None, 0, 0, 0, [], []) 
         return
     
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
-    print(f"\n🏎️ {len(laws)}건 정밀 분석(V25_Webhook_Flash) 시작...")
+    print(f"\n🏎️ {len(laws)}건 정밀 분석 시작...")
     
     for idx, law in enumerate(laws):
         print(f"[{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
@@ -276,11 +304,11 @@ def main():
             failed_queue.append(law)
             print(f"⏩ [실패 원인: {law_info.get('error', '알 수 없음')}]")
         
-        time.sleep(2) # 유료 유저 트래픽 보호용
+        time.sleep(5) 
             
     if failed_queue:
         print("\n🚑 패자부활전 시작...")
-        time.sleep(15)
+        time.sleep(20) 
         for law in failed_queue:
             success, cat, law_info = run_ai_analysis(law, 3)
             if success:
@@ -291,13 +319,11 @@ def main():
     df_simple = pd.DataFrame(simple_related_laws)
     df_summary = pd.DataFrame({"구분": ["총 시행법령", "연관높음", "단순관련"], "건수": [len(laws), len(high_impact_laws), len(simple_related_laws)]})
     
-    fname = f"V25_법령모니터링_{TARGET_DATE}.xlsx"
+    fname = f"V26.4_법령모니터링_{TARGET_DATE}.xlsx"
     apply_excel_formatting(fname, df_summary, df_high, df_simple)
     
     print(f"\n✅ 분석 완료! 파일명: {fname}")
-
-    # 🔥 [정상 분석 완료 후] 엑셀 파일과 함께 요약 데이터를 쏩니다!
-    send_webhook(fname, len(laws), len(high_impact_laws), len(simple_related_laws))
+    send_webhook(fname, len(laws), len(high_impact_laws), len(simple_related_laws), high_impact_laws, simple_related_laws)
 
 if __name__ == "__main__":
     main()
