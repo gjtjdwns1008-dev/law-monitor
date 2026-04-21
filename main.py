@@ -31,7 +31,7 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
-TARGET_DATE = "20260416"
+TARGET_DATE = today.strftime("%Y%m%d") 
 SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
@@ -325,24 +325,38 @@ def apply_excel_formatting(filename, total_len, high_list, simple_list):
     return filename
 
 def send_webhook_with_file(fname, total, high, simple):
-    """🔥 [V27.1 개편] Make.com Iterator 없이 엑셀 파일과 단순 통계만 전송"""
-    summary_data = {"date": FILE_PREFIX, "total": total, "high": high, "simple": simple}
-    print("\n🚀 Make.com으로 데이터 및 엑셀 전송 중...")
+    """🔥 Make.com에 안전하게 통계와 엑셀 전송 (0건 증발 완벽 방어 에디션)"""
+    
+    # 숫자 0이 Make.com에서 '빈 값'으로 오해받아 증발하는 것을 막기 위해 
+    # 아예 "건" 글자를 강제로 붙여서 '문자열'로 박아버립니다!
+    summary_data = {
+        "date": str(FILE_PREFIX), 
+        "total": f"{total}건", 
+        "high": f"{high}건", 
+        "simple": f"{simple}건"
+    }
+    
+    print(f"\n🚀 Make.com 전송 시도: 총 {total}건 / 연관 {high}건 / 단순 {simple}건")
     try:
         if fname and os.path.exists(fname):
             with open(fname, 'rb') as f:
-                # files를 포함하여 전송하면 multipart/form-data로 날아감
+                # 엑셀 파일 첨부 전송
                 files = {'file': (os.path.basename(fname), f, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
                 response = requests.post(WEBHOOK_URL, data=summary_data, files=files)
         else:
             response = requests.post(WEBHOOK_URL, data=summary_data)
-            
+        
+        # 🔥 Make.com 서버가 뭐라고 대답했는지 터미널에 강제 출력!
+        print(f"  👉 Make.com 서버 응답 코드: {response.status_code}")
+        print(f"  👉 Make.com 서버 응답 내용: {response.text}")
+        
         if response.status_code == 200:
-            print("  ✅ 웹훅(엑셀 첨부) 전송 완료!")
+            print("  ✅ 웹훅 전송 성공! (Make.com 서버가 데이터를 꽉 잡았습니다!)")
         else:
-            print(f"  ❌ 웹훅 전송 실패 (상태 코드: {response.status_code})")
+            print(f"  ❌ Make.com 수신 실패 또는 보류됨!")
+            
     except Exception as e: 
-        print(f"❌ 웹훅 에러: {e}")
+        print(f"❌ 웹훅 네트워크 에러: {e}")
 
 def main():
     laws = get_base_laws()
