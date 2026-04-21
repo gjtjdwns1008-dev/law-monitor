@@ -192,13 +192,18 @@ def run_ai_analysis(law, attempt_count=5):
                 
             links_str_list = []
             names_str_list = []
-
+            
             for j in jomun_list:
                 j_name = j.get("조문명", "확인불가")
+                
+                # 🔥 [추가된 2줄] AI가 "별표1", "별표   1" 등으로 줘도 무조건 "별표 1"로 교정
+                if "별표" in j_name:
+                    j_name = re.sub(r'별표\s*(\d+)', r'별표 \1', j_name)
+                    
                 j_num = str(j.get("숫자", "")).strip().replace(".", ":")
                 anchor = f"#J{j_num}" if j_num else ""
                 
-                # 🔥 3. 근거 조문 및 링크 시각적 보정 (어색한 문구 제거)
+                # 🔥 [추가 보정] 어색한 '내용 확인' 텍스트를 깔끔하게 다듬기
                 if j_name == "내용 확인":
                     names_str_list.append("전체 (세부 조문 미지정)")
                     links_str_list.append(f"▶ {law['법령명']}\n{law['링크']}")
