@@ -235,6 +235,7 @@ def run_ai_analysis(law, attempt_count=5):
                 "근거 조문": names_str,
                 "AI 신뢰도": data.get("AI_신뢰도", ""),
                 "검토 필요": data.get("검토필요", "X"),
+                "검토 사유": data.get("검토사유", ""),
                 "조문별 다이렉트 링크": links_str
             }
             return True, data.get("분류", ""), law_info
