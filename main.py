@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, PatternFill, Font
+from openpyxl.styles import Alignment, PatternFill, Font, Border, Side
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -31,11 +31,13 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
-TARGET_DATE = "20260420"
+TARGET_DATE = "20260403"
 SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 session = requests.Session()
@@ -219,13 +221,36 @@ def run_ai_analysis(law, attempt_count=5):
             
     return False, "", {"error": error_msg if 'error_msg' in locals() else "재시도 초과"}
 
-def write_to_google_sheet(total_len, high_list, simple_list):
-    """🔥 [V27.1 신규] 구글 시트 마스터 DB 직접 기록 함수"""
-    if not GCP_SA_JSON or not GOOGLE_SHEET_ID: 
-        print("⚠️ 구글 API 인증 정보가 없어 시트 기록을 건너뜁니다.")
-        return
+def format_google_sheet(sheet_id, worksheet_name):
+    """🔥 구글 시트에 직접 접속하여 헤더 및 정렬 서식 적용"""
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(GCP_SA_JSON), scope)
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet(worksheet_name)
         
-    print("\n📝 구글 시트 적재 중...")
+        # 헤더 서식 (연한 파랑 배경, 굵게, 가운데 정렬)
+        header_fmt = {
+            "backgroundColor": {"red": 0.85, "green": 0.88, "blue": 0.95},
+            "textFormat": {"bold": True},
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+        }
+        ws.format("A1:L1", header_fmt)
+        
+        # 전체 데이터 정렬 및 줄바꿈
+        body_fmt = {
+            "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+        }
+        ws.format("A:L", body_fmt)
+        print(f"  ✨ [{worksheet_name}] 구글 시트 서식 적용 완료")
+    except Exception as e:
+        print(f"  ⚠️ 시트 서식 적용 중 오류: {e}")
+
+def write_to_google_sheet(total_len, high_list, simple_list):
+    """🔥 구글 시트 마스터 DB 적재 (서식 포함)"""
+    if not GCP_SA_JSON or not GOOGLE_SHEET_ID: return
+    print("\n📝 구글 시트 마스터 DB 적재 시작...")
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(GCP_SA_JSON), scope)
@@ -234,40 +259,53 @@ def write_to_google_sheet(total_len, high_list, simple_list):
 
         ws_summary = sheet.worksheet("총괄현황표")
         ws_summary.append_row([FILE_PREFIX, total_len, len(high_list), len(simple_list)])
+        
+        def prepare_rows(laws):
+            return [[law.get(c, "") for c in COLUMNS] for law in laws]
 
-        def dict_to_row(law):
-            return [law.get(k,"") for k in ["시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", "근거 조문", "AI 신뢰도", "검토 필요", "조문별 다이렉트 링크"]]
-
-        if high_list: 
-            sheet.worksheet("연관 높은 법령").append_rows([dict_to_row(law) for law in high_list])
-        if simple_list: 
-            sheet.worksheet("국가기술자격 관계 법령(단순 관련)").append_rows([dict_to_row(law) for law in simple_list])
-        print("  ✅ 구글 시트 적재 완료")
-    except Exception as e: 
-        print(f"❌ 구글 시트 에러: {e}")
+        if high_list:
+            ws_high = sheet.worksheet("연관 높은 법령")
+            ws_high.append_rows(prepare_rows(high_list))
+            format_google_sheet(GOOGLE_SHEET_ID, "연관 높은 법령")
+            
+        if simple_list:
+            ws_simple = sheet.worksheet("국가기술자격 관계 법령(단순 관련)")
+            ws_simple.append_rows(prepare_rows(simple_list))
+            format_google_sheet(GOOGLE_SHEET_ID, "국가기술자격 관계 법령(단순 관련)")
+            
+    except Exception as e: print(f"❌ 시트 적재 오류: {e}")
 
 def apply_excel_formatting(filename, total_len, high_list, simple_list):
-    """🔥 [V27.1 유지] 보고용 실물 엑셀 파일 생성"""
-    print("\n📊 보고용 엑셀 파일 생성 중...")
+    """🔥 첨부용 엑셀 파일 서식 완벽 복구 (테두리 추가)"""
+    print("\n📊 보고용 엑셀 파일 서식 적용 중...")
     df_summary = pd.DataFrame({"구분": ["총 시행", "연관높음", "단순관련"], "건수": [total_len, len(high_list), len(simple_list)]})
-    df_high = pd.DataFrame(high_list) if high_list else pd.DataFrame(columns=["시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", "근거 조문", "AI 신뢰도", "검토 필요", "조문별 다이렉트 링크"])
-    df_simple = pd.DataFrame(simple_list) if simple_list else pd.DataFrame(columns=["시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", "법령 관련 국가기술자격 종목", "활용도 분석 구분", "활용도 분석 상세", "근거 조문", "AI 신뢰도", "검토 필요", "조문별 다이렉트 링크"])
+    df_high = pd.DataFrame(high_list) if high_list else pd.DataFrame(columns=COLUMNS)
+    df_simple = pd.DataFrame(simple_list) if simple_list else pd.DataFrame(columns=COLUMNS)
 
     with pd.ExcelWriter(filename, engine='openpyxl') as writer:
         df_summary.to_excel(writer, sheet_name='총괄현황표', index=False)
-        df_high.to_excel(writer, sheet_name='연관 높은 법령', index=False)
-        df_simple.to_excel(writer, sheet_name='국가기술자격 관계 법령(단순 관련)', index=False)
+        df_high[COLUMNS].to_excel(writer, sheet_name='연관 높은 법령', index=False)
+        df_simple[COLUMNS].to_excel(writer, sheet_name='국가기술자격 관계 법령(단순 관련)', index=False)
     
     wb = load_workbook(filename)
+    side = Side(style='thin', color="000000")
+    border = Border(left=side, right=side, top=side, bottom=side)
+
     for sheet_name in ['연관 높은 법령', '국가기술자격 관계 법령(단순 관련)']:
         ws = wb[sheet_name]
         for i in range(1, 13):
-            ws.cell(row=1, column=i).font = Font(bold=True)
-            ws.cell(row=1, column=i).fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            cell = ws.cell(row=1, column=i)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            cell.border = border
+            
         widths = {'A':12, 'B':15, 'C':35, 'D':12, 'E':45, 'F':40, 'G':18, 'H':50, 'I':18, 'J':12, 'K':10, 'L':55}
         for col, width in widths.items(): ws.column_dimensions[col].width = width
-        for row in ws.iter_rows():
-            for cell in row: cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row):
+            for cell in row:
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = border
     wb.save(filename)
     return filename
 
