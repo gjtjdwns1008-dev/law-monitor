@@ -37,7 +37,10 @@ FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
+# 👇👇👇 여기부터 통째로 복사해서 붙여넣기 (아무 띄어쓰기 없이 맨 왼쪽 줄에 딱 붙여서!) 👇👇👇
+COLUMNS = ["시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", "법령 관련 국가기술자격 종목", 
+           "활용도 분석 구분", "활용도 분석 상세", "근거 조문", "AI 신뢰도", "검토 필요", "조문별 다이렉트 링크"]
+# 👆👆👆 여기까지 👆👆👆
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 session = requests.Session()
