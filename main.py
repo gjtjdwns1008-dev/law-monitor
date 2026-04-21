@@ -196,8 +196,8 @@ def run_ai_analysis(law, attempt_count=5):
                 j_num = str(j.get("숫자", "")).strip().replace(".", ":")
                 anchor = f"#J{j_num}" if j_num else ""
                 
-                # V26.4 방식 (구글 시트/엑셀 겸용 병합 텍스트)
-                links_str_list.append(f"{law['링크']}{anchor}\n(해당 조문: {j_name})")
+                # V26.4 오리지널 방식 그대로 복원
+                links_str_list.append(f"▶ {law['법령명']} {j_name}\n{law['링크']}{anchor}")
                 
             links_str = "\n\n".join(links_str_list)
             names_str = ", ".join(names_str_list)
