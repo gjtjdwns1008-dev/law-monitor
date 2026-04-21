@@ -31,7 +31,7 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
-TARGET_DATE = today.strftime("%Y%m%d") 
+TARGET_DATE = "20260403"
 SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
