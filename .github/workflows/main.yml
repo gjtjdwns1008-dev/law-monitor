@@ -27,11 +27,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pandas google-genai openpyxl gspread oauth2client
 
-      - name: 🚀 엑셀 공장 가동 및 이메일 발송
+      - name: 🚀 엑셀 공장 가동 및 구글 시트 연동
         env: 
           LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+          # 🔥 구글 시트 출입증 2개 추가 완료! 🔥
+          GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: python -u main.py
