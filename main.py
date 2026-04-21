@@ -31,7 +31,7 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 # ==========================================
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
-TARGET_DATE = "20260403"
+TARGET_DATE = today.strftime("%Y%m%d") 
 SEARCH_DATE_RANGE = f"{TARGET_DATE}~{TARGET_DATE}" 
 FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
@@ -139,7 +139,7 @@ def run_ai_analysis(law, attempt_count=5):
     3. 소관부처: 법령 내용을 바탕으로 해당 법령을 소관하는 정부 부처명 추출 (예: 고용노동부, 국토교통부 등)
     4. 개정유형: 법령의 제·개정 성격 추출 (예: 일부개정, 전부개정, 제정, 타법개정 등)
     5. 근거조문: 판단의 결정적인 근거가 된 조항 번호 (예: 제3조제1항, 별표2 등)
-    6. 조문번호_숫자: 위 근거조문에서 숫자만 추출 (예: 제3조 -> 3, 제10조의2 -> 10.2) - 다이렉트 링크 생성용
+    6. 조문번호_숫자: 연관된 조문이 여러 개일 경우 **반드시 모두 추출**하여 배열 형태로 작성 (예: [{{"조문명": "제23조", "숫자": "23"}}, {{"조문명": "제38조의2", "숫자": "38.2"}}])
     7. AI_신뢰도: 본인의 분석 결과에 대한 확신도 ('높음', '낮음' 중 택1)
     8. 검토필요: '활용도_구분'이 '대폭 증가/감소' 이거나 'AI_신뢰도'가 '낮음'인 경우 'O', 그 외는 'X'
     
@@ -166,7 +166,10 @@ def run_ai_analysis(law, attempt_count=5):
         "활용도_구분": "선택",
         "활용도_분석": "① 개정 배경: ... \\n② 방향성: ... \\n③ 파급효과: ...",
         "근거조문": "제O조 제O항",
-        "조문번호_숫자": "O",
+        "조문리스트": [
+            {{"조문명": "제23조의3", "숫자": "23.3"}},
+            {{"조문명": "별표 5", "숫자": ""}}
+        ],
         "AI_신뢰도": "'높음' 또는 '낮음'",
         "검토필요": "'O' 또는 'X'"
     }}
@@ -189,15 +192,19 @@ def run_ai_analysis(law, attempt_count=5):
                 
             links_str_list = []
             names_str_list = []
+
             for j in jomun_list:
                 j_name = j.get("조문명", "확인불가")
-                names_str_list.append(j_name)
-                
                 j_num = str(j.get("숫자", "")).strip().replace(".", ":")
                 anchor = f"#J{j_num}" if j_num else ""
                 
-                # V26.4 오리지널 방식 그대로 복원
-                links_str_list.append(f"▶ {law['법령명']} {j_name}\n{law['링크']}{anchor}")
+                # 🔥 3. 근거 조문 및 링크 시각적 보정 (어색한 문구 제거)
+                if j_name == "내용 확인":
+                    names_str_list.append("전체 (세부 조문 미지정)")
+                    links_str_list.append(f"▶ {law['법령명']}\n{law['링크']}")
+                else:
+                    names_str_list.append(j_name)
+                    links_str_list.append(f"▶ {law['법령명']} {j_name}\n{law['링크']}{anchor}")
                 
             links_str = "\n\n".join(links_str_list)
             names_str = ", ".join(names_str_list)
