@@ -37,10 +37,18 @@ FILE_PREFIX = today.strftime("%Y년_%m월_%d일")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 👇👇👇 여기부터 통째로 복사해서 붙여넣기 (아무 띄어쓰기 없이 맨 왼쪽 줄에 딱 붙여서!) 👇👇👇
+# [기존 COLUMNS를 아래 코드로 교체]
 COLUMNS = ["시행일자", "소관부처", "법령명", "개정유형", "주요 제·개정내용", "법령 관련 국가기술자격 종목", 
            "활용도 분석 구분", "활용도 분석 상세", "근거 조문", "AI 신뢰도", "검토 필요", "검토 사유", "조문별 다이렉트 링크"]
-# 👆👆👆 여기까지 👆👆👆
+
+# [COLUMNS 아래 빈 줄에 새로 추가]
+def clean_to_markdown(title, content):
+    """밋밋한 조문 텍스트를 AI가 분석하기 좋게 마크다운(Markdown)으로 정제하는 함수"""
+    if not content: return ""
+    text = content.strip()
+    # 조문 내 동그라미 번호(①, ② 등)를 마크다운 리스트( - **①** )로 예쁘게 변환
+    text = re.sub(r'(①|②|③|④|⑤|⑥|⑦|⑧|⑨|⑩)', r'\n- **\1**', text)
+    return f"### 📜 {title}\n{text}\n"
 
 HEADERS = {'User-Agent': 'Mozilla/5.0'}
 session = requests.Session()
@@ -80,7 +88,7 @@ QNET_CERTS = """
 
 def get_base_laws():
     all_laws_dict = {}
-    print(f"\n📅 [V27.1] {SEARCH_DATE_RANGE} 데이터 수집 시작...")
+    print(f"\n📅 [V28] {SEARCH_DATE_RANGE} 데이터 수집 시작...")
     
     for target_type in ['law', 'histlaw']:
         page = 1
@@ -104,14 +112,46 @@ def get_base_laws():
                     detail_response = session.get(detail_url, headers=HEADERS, timeout=15)
                     detail_root = ET.fromstring(detail_response.text)
                     
+# [기존 reason_text부터 full_text 변수 선언부까지를 아래 코드로 통째로 교체!]
                     reason_text = ""
                     for tag in ['.//개정이유', './/제개정이유']:
                         r_node = detail_root.find(tag)
                         if r_node is not None and r_node.text: reason_text += r_node.text.strip() + "\n"
                     
-                    body_text = "\n".join([j.text.strip() for j in detail_root.findall('.//조문내용') if j.text])
+                    # 💡 [V28 핵심] 제1조(목적) 및 개정/신설 조문만 핀포인트 추출
+                    article_1 = ""
+                    changed_articles = []
+                    
+                    for jomun in detail_root.findall('.//조문단위'):
+                        if jomun.attrib.get('조문여부') == '조문':
+                            title = jomun.find('조문제목').text if jomun.find('조문제목') is not None else ""
+                            content = jomun.find('조문내용').text if jomun.find('조문내용') is not None else ""
+                            
+                            # 거시적 숲: 제1조(목적)는 무조건 수집 
+                            if "제1조(" in title or "목적" in title:
+                                article_1 = clean_to_markdown(title, content)
+                            
+                            # 미시적 나무: 바뀐 조문(개정, 신설)만 쏙쏙 수집
+                            elif "개정" in content or "신설" in content:
+                                changed_articles.append(clean_to_markdown(title, content))
+
+                    # 국가기술자격의 꽃인 '별표'는 기존처럼 무조건 살림
                     stars = "\n".join([s.text.strip() for s in detail_root.findall('.//별표내용') if s.text])
-                    full_text = f"[개정이유]\n{reason_text}\n[조문내용]\n{body_text}\n[별표]\n{stars}"[:20000]
+                    
+                    # 💡 마크다운 3단 콤보로 궁극의 밥상 조립!
+                    full_text = f"### 🏢 개정이유\n{reason_text}\n\n"
+                    full_text += f"{article_1}\n" if article_1 else ""
+                    
+                    if changed_articles:
+                        full_text += "### 🚨 이번에 바뀐 핵심 조문\n" + "\n".join(changed_articles)
+                    else:
+                        body_text = "\n".join([j.text.strip() for j in detail_root.findall('.//조문내용') if j.text])
+                        full_text += f"### 🚨 전체 조문 (바뀐 조문 탐색 실패 시)\n{body_text}"
+                    
+                    if stars:
+                        full_text += f"\n\n### ⭐ 별표(자격 기준 등)\n{stars}"
+                    
+                    full_text = full_text[:15000] # 토큰 절약을 위해 1만 5천자로 컷!
                     
                     all_laws_dict[law_name] = {"법령명": law_name, "시행일자": enforce_date, "원본": full_text, "링크": law_link}
                     time.sleep(0.1) 
@@ -122,66 +162,44 @@ def get_base_laws():
 
 def run_ai_analysis(law, attempt_count=5):
     # 🔥 V26.4 선생님의 오리지널 프롬프트 100% 복원
+# [기존 프롬프트와 generate_content 호출부를 아래로 덮어쓰기]
     prompt = f"""
-    당신은 한국산업인력공단의 국가기술자격 규제 심사 연구원입니다.
-    아래 제공된 [법령명]과 [내용]을 심층 분석하여, [491개 자격 사전]에 명시된 국가기술자격증과의 연관성을 평가하고 정해진 JSON 양식으로만 출력하십시오.
-    
-    [491개 자격 사전] {QNET_CERTS}
-    
-    [법령명] {law['법령명']}
-    [내용] {law['원본']}
+    당신은 한국산업인력공단의 국가기술자격 규제 심사 수석 연구원입니다.
+    아래 제공된 [법령명]과 [내용]은 AI의 논리적 인식을 돕기 위해 불필요한 태그가 제거된 순수 '마크다운(Markdown)' 형식의 데이터입니다.
 
-    [판정 가이드라인]
-    1. 분류 기준 (아래 3가지 중 택1):
-       - '연관높음': 자격증 소지자의 선임 의무, 가점, 면허/등록 기준 등 활용도가 직접적으로 변동되는 경우
-       - '단순관련': 법령에 명칭은 언급되나 실제 활용도 변화가 없는 경우
-       - '일반': 자격증과 무관한 경우
-    2. 활용도_구분: '연관높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택.
-    3. 소관부처: 법령 내용을 바탕으로 해당 법령을 소관하는 정부 부처명 추출 (예: 고용노동부, 국토교통부 등)
-    4. 개정유형: 법령의 제·개정 성격 추출 (예: 일부개정, 전부개정, 제정, 타법개정 등)
-    5. 근거조문: 판단의 결정적인 근거가 된 조항 번호 (예: 제3조제1항, 별표2 등)
-    6. 조문번호_숫자: 연관된 조문이 여러 개일 경우 **반드시 모두 추출**하여 배열 형태로 작성 (예: [{{"조문명": "제23조", "숫자": "23"}}, {{"조문명": "제38조의2", "숫자": "38.2"}}])
-    7. AI_신뢰도: 본 분석에 대한 AI의 객관적 확신도 ('높음', '보통', '낮음' 중 택1)
-       - 높음: 법령 본문이나 별표에 '국가기술자격 종목 명칭'이 정확히 텍스트로 명시된 경우
-       - 보통: 종목 명칭이 직접 명시되지는 않았으나, 직무 내용상 연관성이 매우 높다고 강하게 추론되는 경우
-       - 낮음: 법령 내용이 모호하거나, 자격증과의 연관성을 억지로 논리적 비약을 통해 연결해야 하는 경우
-       
-    8. 검토필요: 실무자의 교차 검증이 반드시 필요한 경우 'O', 아니면 'X'
-       - [체크(O) 필수 조건]: ① 'AI_신뢰도'가 '보통' 또는 '낮음'이거나, ② '활용도_구분'이 '대폭 증가/감소'로 파급력이 큰 경우
-       
-    9. 검토사유: '검토필요'가 'O'인 경우에 한해, 그 이유를 작성 (예: "자격 명칭이 직접 명시되지 않아 실무자 확인 요망", "활용도가 대폭 증가하여 정책적 대응 필요" 등). '검토필요'가 'X'이면 빈칸("").
-    
-    🔥 [작성 가이드라인: 주요 제·개정내용 (요약)] 🔥
-    - 실제 개정된 조항과 객관적인 팩트만 글머리 기호('-')를 사용하여 나열하십시오.
+    [491개 자격 사전]
+    {QNET_CERTS}
 
-    🔥 [작성 가이드라인: 활용도 분석 상세] 🔥
-    - [1000자 이내 제한] 1000자 이내로 간결하고 명확하게 분석하십시오.
-    - ① 개정 배경, ② 방향성, ③ 파급효과에 집중하십시오.
+    [법령명]
+    {law['법령명']}
+
+    [내용]
+    {law['원본']}
+
+    [💡 심층 분석 전략 (매우 중요)]
+    제공된 [내용]은 여러 파트로 구성되어 있습니다. 각 파트의 역할을 엄격히 구분하여 분석하십시오.
+    1. '제1조(목적)' 및 '개정이유': 이 법령이 지배하는 산업 환경과 개정의 거시적 배경을 파악하는 '숲(Market Context)'으로만 활용하십시오. 여기서는 자격증 명칭을 억지로 찾지 마십시오.
+    2. '🚨 이번에 바뀐 핵심 조문' 및 '⭐ 별표': 실제로 규제가 신설/완화되거나 자격증 수요에 직접적 타격을 주는 '나무(Key Impact)'입니다. 이 부분을 돋보기처럼 정밀 분석하십시오.
+    3. 거시적 환경(1번)을 바탕으로, 바뀐 조문/별표(2번)가 [491개 자격 사전]의 특정 종목들에 어떤 구체적 파급 효과를 미치는지 연결하여 결론을 내십시오.
+
+    [분석 및 판단 기준]
+    1. 분류: '연관높음', '단순관련', '일반' 중 택1
+    2. 활용도_구분: '연관높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택. 그 외는 빈칸("").
+    3. 소관부처: 정부 부처명 추출.
+    4. 개정유형: 제정, 일부개정, 전부개정 등 성격 추출.
+    5. 조문리스트: 연관된 조문이 여러 개일 경우 **반드시 모두 추출**하여 배열 형태로 작성
+       - [주의] 제O조 형태: {{"조문명": "제23조의2", "숫자": "23.2"}} 
+       - [주의] 별표 형태: "별표1"이 아닌 "별표 1"과 같이 반드시 띄어쓰기를 지켜서 작성. (숫자는 빈칸 "")
+    6. AI_신뢰도: 본 분석에 대한 AI의 객관적 확신도 ('높음', '보통', '낮음' 중 택1)
+       - 높음: 법령(바뀐조문/별표)에 '국가기술자격 종목 명칭'이 정확히 텍스트로 명시된 경우
+       - 보통: 명칭은 없으나 직무 내용상 연관성이 매우 높다고 강하게 추론되는 경우
+       - 낮음: 연관성을 억지로 논리적 비약을 통해 연결해야 하는 경우
+    7. 검토필요: 실무자의 교차 검증이 반드시 필요한 경우 'O', 아니면 'X'
+       - [체크(O) 필수 조건]: ① 'AI_신뢰도'가 '보통/낮음'이거나, ② '활용도_구분'이 '대폭 증가/감소'로 파급력이 큰 경우
+    8. 검토사유: '검토필요'가 'O'인 경우에 한해, 그 이유를 구체적으로 작성 (예: "자격 명칭이 직접 명시되지 않아 실무자 확인 요망"). '검토필요'가 'X'이면 빈칸("").
 
     [🚨 JSON 작성 절대 규칙]
-    1. 출력은 단 1개의 JSON 객체({{ }})만.
-    2. (큰따옴표 전면 금지) 모든 텍스트 내부에 절대 큰따옴표(") 금지. 강조는 작은따옴표(') 사용.
-    3. (실제 엔터키 금지) 텍스트 내부 실제 줄바꿈 대신 '\\n' 기호 사용.
-    4. (종목 포맷팅) 각 직무분야 시작 시 'O ' 꼭지 사용 및 줄바꿈 기호('\\n') 사용.
-
-    [출력 JSON 형태]
-    {{
-        "분류": "'연관높음', '단순관련', '일반' 중 택 1",
-        "소관부처": "고용노동부",
-        "개정유형": "일부개정",
-        "요약": "- 제O조: 객관적 팩트\\n- 제O조: 객관적 팩트",
-        "종목": "O 직무분야: 종목A, 종목B\\nO 직무분야2: 종목C", 
-        "활용도_구분": "선택",
-        "활용도_분석": "① 개정 배경: ... \\n② 방향성: ... \\n③ 파급효과: ...",
-        "근거조문": "제O조 제O항",
-        "조문리스트": [
-            {{"조문명": "제23조의3", "숫자": "23.3"}},
-            {{"조문명": "별표 5", "숫자": ""}}
-        ],
-        "AI_신뢰도": "보통",
-        "검토필요": "O",
-        "검토사유": "법령에는 '관련 기술자격'으로만 포괄 명시되어 있어, 정확한 해당 종목 매칭에 대한 실무자 교차 검증이 필요함."
-    }}
+    - 단 1개의 JSON 객체({{ }}) 형태로만 출력. 내부 큰따옴표 금지.
     """
     
     for attempt in range(attempt_count):
@@ -189,7 +207,11 @@ def run_ai_analysis(law, attempt_count=5):
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=8192)
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", 
+                    max_output_tokens=8192,
+                    temperature=0.0  # 🔥 [V28 핵심] 온도를 0.0으로 고정하여 환각과 헛소리 원천 차단!
+                )
             )
             raw_text = response.text.strip().replace("```json", "").replace("```", "")
             data = json.loads(raw_text, strict=False)
@@ -223,6 +245,7 @@ def run_ai_analysis(law, attempt_count=5):
             links_str = "\n\n".join(links_str_list)
             names_str = ", ".join(names_str_list)
             
+# [기존 law_info = { ... } 부분을 아래로 덮어쓰기]
             law_info = {
                 "시행일자": law["시행일자"],
                 "소관부처": data.get("소관부처", ""),
@@ -235,7 +258,7 @@ def run_ai_analysis(law, attempt_count=5):
                 "근거 조문": names_str,
                 "AI 신뢰도": data.get("AI_신뢰도", ""),
                 "검토 필요": data.get("검토필요", "X"),
-                "검토 사유": data.get("검토사유", ""),
+                "검토 사유": data.get("검토사유", ""), # 💡 요양소가 드디어 뚫렸습니다!
                 "조문별 다이렉트 링크": links_str
             }
             return True, data.get("분류", ""), law_info
