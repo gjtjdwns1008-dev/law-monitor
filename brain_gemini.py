@@ -89,7 +89,7 @@ def run_ai_analysis(law, attempt_count=5):
 
         try:
             response = client.models.generate_content(
-                model='gemini-1.5-flash', 
+                model='gemini-2.5-flash', 
                 contents=prompt,
                 # 🚨 [핵심 수정] response_mime_type="application/json" 제거! (생성 속도 5배 향상)
                 config=types.GenerateContentConfig(
