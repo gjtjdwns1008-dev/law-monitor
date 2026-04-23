@@ -20,18 +20,19 @@ def main():
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
     all_results_for_sheet = [] # 구글 시트에 넣을 전체 마스터 데이터 모음
 
-# ==========================================
+    # ==========================================
     # 2. AI 정밀 분석 루프
     # ==========================================
     print(f"\n🏎️  총 {len(laws)}건 분석 시작 (직제/조직 법령은 0.1초 컷으로 패스합니다)...")
     for idx, law in enumerate(laws):
-        # 💡 [업데이트] AI가 일하고 있다는 걸 명확하게 보여줍니다.
-        print(f"  [{idx+1}/{len(laws)}] 🔍 {law['법령명']} (AI 분석 중...) ", end="", flush=True)
         
-        law_start_time = time.time() # 타이머 시작!
+        # 💡 [핵심 수정] end="" 를 빼서 무조건 화면에 즉시 글자가 뜨게 만듭니다!
+        print(f"  [{idx+1}/{len(laws)}] 🔍 {law['법령명']} (제미나이 서버로 전송... 응답 대기중!)")
+        
+        start_time = time.time()
 
         if law.get("스킵여부") == True:
-            print("⏩ [스킵: 조직/직제 관련]")
+            print("    ⏩ [스킵: 조직/직제 관련]")
             skip_info = {
                 "시행일자": law["시행일자"], "법령명": law["법령명"], 
                 "주요 제·개정내용": "조직/직제 관련 법령으로 AI 분석 생략", 
@@ -42,17 +43,17 @@ def main():
 
         success, cat, law_info = run_ai_analysis(law)
         
-        law_elapsed = time.time() - law_start_time # 걸린 시간 계산
+        elapsed = time.time() - start_time
         
         if success:
-            if cat == "연관높음": high_impact_laws.append(law_info); print(f"🔥 ({law_elapsed:.1f}초)")
-            elif cat == "단순관련": simple_related_laws.append(law_info); print(f"🟡 ({law_elapsed:.1f}초)")
-            else: print(f"❌ 일반 ({law_elapsed:.1f}초)")
+            if cat == "연관높음": high_impact_laws.append(law_info); print(f"    🔥 연관높음 ({elapsed:.1f}초)")
+            elif cat == "단순관련": simple_related_laws.append(law_info); print(f"    🟡 단순관련 ({elapsed:.1f}초)")
+            else: print(f"    ❌ 일반 ({elapsed:.1f}초)")
             all_results_for_sheet.append(law_info)
         else:
             failed_queue.append(law)
-            print(f"⏩ [분석 실패: {law_info.get('error', '알 수 없음')}] ({law_elapsed:.1f}초)")
-
+            print(f"    ⏩ [분석 실패: {law_info.get('error', '알 수 없음')}] ({elapsed:.1f}초)")
+            
     # ==========================================
     # 3. 패자부활전 (에러 났던 법령들 재시도)
     # ==========================================
