@@ -20,14 +20,16 @@ def main():
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
     all_results_for_sheet = [] # 구글 시트에 넣을 전체 마스터 데이터 모음
 
-    # ==========================================
+# ==========================================
     # 2. AI 정밀 분석 루프
     # ==========================================
     print(f"\n🏎️  총 {len(laws)}건 분석 시작 (직제/조직 법령은 0.1초 컷으로 패스합니다)...")
     for idx, law in enumerate(laws):
-        print(f"  [{idx+1}/{len(laws)}] {law['법령명']}... ", end="", flush=True)
+        # 💡 [업데이트] AI가 일하고 있다는 걸 명확하게 보여줍니다.
+        print(f"  [{idx+1}/{len(laws)}] 🔍 {law['법령명']} (AI 분석 중...) ", end="", flush=True)
+        
+        law_start_time = time.time() # 타이머 시작!
 
-        # 💡 [V29 핵심 최적화] 수집 단계에서 '스킵' 딱지가 붙은 녀석들은 AI에게 안 보냅니다!
         if law.get("스킵여부") == True:
             print("⏩ [스킵: 조직/직제 관련]")
             skip_info = {
@@ -38,16 +40,18 @@ def main():
             all_results_for_sheet.append(skip_info)
             continue
 
-        # 정상 법령은 제미나이에게 분석을 맡깁니다.
         success, cat, law_info = run_ai_analysis(law)
+        
+        law_elapsed = time.time() - law_start_time # 걸린 시간 계산
+        
         if success:
-            if cat == "연관높음": high_impact_laws.append(law_info); print("🔥")
-            elif cat == "단순관련": simple_related_laws.append(law_info); print("🟡")
-            else: print("❌ (일반)")
+            if cat == "연관높음": high_impact_laws.append(law_info); print(f"🔥 ({law_elapsed:.1f}초)")
+            elif cat == "단순관련": simple_related_laws.append(law_info); print(f"🟡 ({law_elapsed:.1f}초)")
+            else: print(f"❌ 일반 ({law_elapsed:.1f}초)")
             all_results_for_sheet.append(law_info)
         else:
             failed_queue.append(law)
-            print(f"⏩ [분석 실패: {law_info.get('error', '알 수 없음')}]")
+            print(f"⏩ [분석 실패: {law_info.get('error', '알 수 없음')}] ({law_elapsed:.1f}초)")
 
     # ==========================================
     # 3. 패자부활전 (에러 났던 법령들 재시도)
