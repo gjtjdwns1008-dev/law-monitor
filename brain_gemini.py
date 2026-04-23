@@ -7,8 +7,8 @@ from google.genai import types
 # 💡 1단계 config 파일에서 제미나이 키와 자격증 리스트를 가져옵니다.
 from config import GEMINI_API_KEY, QNET_CERTS
 
-# 제미나이 클라이언트 초기화
-client = genai.Client(api_key=GEMINI_API_KEY)
+# 🚨 [핵심 수정 1] 구글이 90초 동안 대답 없으면 강제로 통화 끊기 (좀비 방지)
+client = genai.Client(api_key=GEMINI_API_KEY, http_options={'timeout': 90.0})
 
 # ==========================================
 # AI 분석 메인 함수
@@ -82,14 +82,18 @@ def run_ai_analysis(law, attempt_count=5):
     }}
     """
 
-    for attempt in range(attempt_count):
+for attempt in range(attempt_count):
+        # 🚨 [핵심 수정 2] 재시도할 때마다 화면에 진행 상황 생중계!
+        if attempt > 0:
+            print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
+
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash', # 기본은 똑똑한 2.5로 유지!
+                model='gemini-2.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json", 
-                    max_output_tokens=2048, # 🔥 글자 수 제한 (끊김 방지 및 속도 향상)
+                    max_output_tokens=2048, 
                     temperature=0.0  
                 )
             )
@@ -140,13 +144,16 @@ def run_ai_analysis(law, attempt_count=5):
             
         except Exception as e:
             error_msg = str(e)
-            # 🔥 [503 방어 로직] 서버가 뻗으면 길게 대기합니다!
+            # 🚨 [핵심 수정 3] 에러 메시지도 화면에 친절하게 띄워줍니다.
             if "503" in error_msg or "high demand" in error_msg.lower():
                 wait_time = 60 * (attempt + 1)
-                print(f"  🚨 [서버 폭주 대피] {wait_time}초간 딥슬립 후 재시도... ", end="", flush=True)
+                print(f"\n    🚨 [서버 폭주] {wait_time}초 대기 후 재시도합니다...", end="", flush=True)
+            elif "timeout" in error_msg.lower():
+                wait_time = 15 * (attempt + 1)
+                print(f"\n    🚨 [구글 무응답(Timeout)] {wait_time}초 대기 후 재시도...", end="", flush=True)
             else:
                 wait_time = 15 * (attempt + 1)
-                print(f"  🚨 [일반 에러: {e}] {wait_time}초 대기... ", end="", flush=True)
+                print(f"\n    🚨 [기타 에러: {error_msg[:30]}...] {wait_time}초 대기...", end="", flush=True)
                 
             time.sleep(wait_time)
             
