@@ -8,7 +8,7 @@ from google.genai import types
 from config import GEMINI_API_KEY, QNET_CERTS
 
 # 🚨 [핵심 수정 1] 구글이 90초 동안 대답 없으면 강제로 통화 끊기 (좀비 방지)
-client = genai.Client(api_key=GEMINI_API_KEY, http_options={'timeout': 90.0})
+client = genai.Client(api_key=GEMINI_API_KEY, http_options={'timeout': 150.0})
 
 # ==========================================
 # AI 분석 메인 함수
