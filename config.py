@@ -19,7 +19,7 @@ KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
 
 # 💡 만약 과거 데이터를 돌리고 싶다면 이 변수를 수동으로 바꿔서 쓰면 됩니다.# today.strftime("%Y%m%d") 
-TARGET_DATE = today.strftime("%Y%m%d") 
+TARGET_DATE = "20260422"
 
 # 엑셀 및 구글 시트에 들어갈 컬럼명
 COLUMNS = [
