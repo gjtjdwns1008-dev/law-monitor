@@ -1,12 +1,13 @@
 import json
 import re
 import time
-import google.genai as genai
+from google import genai
+from google.genai import types
 
 from config import GEMINI_API_KEY, QNET_CERTS
 
-# 🚨 [완벽 복구] V28에서 썼던 가장 안정적인 구글 통신 방식으로 되돌렸습니다!
-genai.configure(api_key=GEMINI_API_KEY)
+# 🚨 [V29 최신 방식] 옛날 방식인 genai.configure는 완전히 사라졌습니다!
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def run_ai_analysis(law, attempt_count=5):
     prompt = f"""
@@ -79,7 +80,7 @@ def run_ai_analysis(law, attempt_count=5):
             print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
 
         try:
-            # 🚨 [진짜 해결] 존재하는 최신 모델(2.5-flash)로 확실히 되돌렸습니다!
+            # 🚨 존재하는 최신 모델(2.5-flash) 사용 및 안전장치 결합
             response = client.models.generate_content(
                 model='gemini-2.5-flash', 
                 contents=prompt,
