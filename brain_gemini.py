@@ -49,10 +49,10 @@ def run_ai_analysis(law, attempt_count=5):
     - [1000자 이내 제한] 1000자 이내로 간결하고 명확하게 분석하십시오.
     - ① 개정 배경, ② 방향성, ③ 파급효과에 집중하십시오.
 
-    [🚨 JSON 작성 절대 규칙]
-    1. 출력은 단 1개의 JSON 객체({{ }})만.
-    2. (큰따옴표 전면 금지) 모든 텍스트 내부에 절대 큰따옴표(") 금지. 강조는 작은따옴표(') 사용.
-    3. (실제 엔터키 금지) 텍스트 내부 실제 줄바꿈 대신 '\\n' 기호 사용.
+[🚨 치명적 에러 방지 규칙 - 반드시 지킬 것 (시스템 붕괴 방지)]
+    1. **JSON 형태 유지**: JSON의 Key(예: "요약", "종목")는 반드시 큰따옴표(")를 사용해야 합니다.
+    2. **내부 텍스트 큰따옴표 금지**: 단, 당신이 작성하는 한국어 내용 안에서 단어를 강조할 때는 절대 큰따옴표(")를 쓰지 말고, 무조건 작은따옴표(')를 쓰세요.
+    3. **엔터키(줄바꿈) 절대 금지**: 모든 텍스트는 중간에 줄바꿈 없이 한 줄로 이어서 작성하세요.
     4. (종목 포맷팅) 각 직무분야 시작 시 'O ' 꼭지 사용 및 줄바꿈 기호('\\n') 사용.
 
     [출력 JSON 포맷]
@@ -87,20 +87,30 @@ def run_ai_analysis(law, attempt_count=5):
                 config=types.GenerateContentConfig(
 # 🚨 [핵심 변경] 버그가 많은 JSON 강제 모드를 끄고 AI의 자연스러운 출력을 유도!
                     max_output_tokens=8192, 
-                    temperature=0.2
+                    temperature=0.1 # 🚨 창의성을 완전히 낮춰서 딴짓 못하게 기계로 만듭니다.
                 )
             )
             
             raw_text = response.text.strip()
-# 🌟 [강력한 방어막] 정규식을 이용해 AI가 뱉은 말 중에 순수 JSON 덩어리만 칼같이 발라냅니다.
+
+            # 1. 껍데기 벗기기
             match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL | re.IGNORECASE)
             if match:
                 json_str = match.group(1)
             else:
                 json_str = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
             
-            data = json.loads(json_str, strict=False)
+            # 🌟🌟 [무적 다리미] Unterminated string의 진범인 '엔터키(\n)'와 '탭(\t)'을 싹 다 공백으로 다려버립니다!
+            json_str = json_str.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
             
+            try:
+                data = json.loads(json_str, strict=False)
+            except json.JSONDecodeError as je:
+                # 🌟🌟 [블랙박스 로그] 만약 또 실패한다면, 도대체 AI가 뭐라고 썼는지 화면에 박제합니다!
+                print(f"\n    🚨 [AI 문법 파괴 발생! 범인 색출 블랙박스 로그]")
+                print(f"    >> AI가 뱉은 날것의 텍스트:\n{json_str}\n")
+                raise Exception(f"JSON 문법 오류: {je}")
+
             jomun_list = data.get("조문리스트", [])
             if not jomun_list or not isinstance(jomun_list, list):
                 jomun_list = [{"조문명": "내용 확인", "숫자": ""}]
