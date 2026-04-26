@@ -89,7 +89,7 @@ def run_ai_analysis(law, attempt_count=5):
 
         try:
             response = client.models.generate_content(
-                model='gemini-1.5-flash', 
+                model='gemini-2.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json", # 🚨 [부활] 1.5-flash는 빠르니까 검사기를 켜도 안 멈춥니다! 무조건 완벽한 JSON만 출력하게 강제합니다!
