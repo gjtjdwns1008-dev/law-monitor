@@ -85,15 +85,21 @@ def run_ai_analysis(law, attempt_count=5):
                 model='gemini-2.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json", 
+# 🚨 [핵심 변경] 버그가 많은 JSON 강제 모드를 끄고 AI의 자연스러운 출력을 유도!
                     max_output_tokens=8192, 
-                    temperature=0.2 
+                    temperature=0.2
                 )
             )
             
             raw_text = response.text.strip()
-            raw_text = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
-            data = json.loads(raw_text, strict=False)
+# 🌟 [강력한 방어막] 정규식을 이용해 AI가 뱉은 말 중에 순수 JSON 덩어리만 칼같이 발라냅니다.
+            match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL | re.IGNORECASE)
+            if match:
+                json_str = match.group(1)
+            else:
+                json_str = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+            
+            data = json.loads(json_str, strict=False)
             
             jomun_list = data.get("조문리스트", [])
             if not jomun_list or not isinstance(jomun_list, list):
