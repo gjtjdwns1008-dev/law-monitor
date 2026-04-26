@@ -77,7 +77,8 @@ def main():
     # 4. 보고서 작성 및 발송
     # ==========================================
     print("\n📝 구글 시트 마스터 DB 적재 시작...")
-    upload_to_google_sheet(all_results_for_sheet)
+    # 🌟 [수정] 업그레이드된 방식에 맞춰 3개(총 건수, 연관높음 리스트, 단순관련 리스트)를 전달합니다!
+    upload_to_google_sheet(len(laws), high_impact_laws, simple_related_laws)
 
     print("\n📊 보고용 엑셀 파일 생성 중...")
     excel_filename = create_excel_report(high_impact_laws, simple_related_laws)
