@@ -6,7 +6,8 @@ from google.genai import types
 
 from config import GEMINI_API_KEY, QNET_CERTS
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+# 🚨 [완벽 복구] V28에서 썼던 가장 안정적인 구글 통신 방식으로 되돌렸습니다!
+genai.configure(api_key=GEMINI_API_KEY)
 
 def run_ai_analysis(law, attempt_count=5):
     prompt = f"""
@@ -73,6 +74,8 @@ def run_ai_analysis(law, attempt_count=5):
         ]
     }}
     """
+# 🚨 V28에서 썼던 튼튼한 모델 호출 방식
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
     for attempt in range(attempt_count):
         if attempt > 0:
