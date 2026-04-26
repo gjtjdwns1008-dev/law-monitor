@@ -73,22 +73,21 @@ def run_ai_analysis(law, attempt_count=5):
         ]
     }}
     """
-# 🚨 [V28 방식] 'client' 대신 'model'이라는 이름의 AI 객체를 생성합니다!
-    model = genai.GenerativeModel('gemini-1.5-flash')
 
     for attempt in range(attempt_count):
         if attempt > 0:
             print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
 
         try:
-            # 🚨 [V28 방식] AI에게 질문을 던지는 방식도 완벽히 호환되게 맞췄습니다.
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "max_output_tokens": 2048,
-                    "temperature": 0.2
-                }
+            # 🚨 [진짜 해결] 존재하는 최신 모델(2.5-flash)로 확실히 되돌렸습니다!
+            response = client.models.generate_content(
+                model='gemini-2.5-flash', 
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", 
+                    max_output_tokens=2048, 
+                    temperature=0.2 
+                )
             )
             
             raw_text = response.text.strip()
