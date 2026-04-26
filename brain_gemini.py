@@ -7,6 +7,8 @@ from google.genai import types
 # 💡 1단계 config 파일에서 제미나이 키와 자격증 리스트를 가져옵니다.
 from config import GEMINI_API_KEY, QNET_CERTS
 
+# 🚨 바로 이 줄입니다! 이 줄이 지워졌거나 오타가 나면 안 됩니다!
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ==========================================
 # AI 분석 메인 함수
