@@ -82,23 +82,28 @@ def run_ai_analysis(law, attempt_count=5):
     }}
     """
 
-    for attempt in range(attempt_count):
-        # 🚨 [핵심 수정 2] 재시도할 때마다 화면에 진행 상황 생중계!
+for attempt in range(attempt_count):
         if attempt > 0:
             print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
 
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash', 
+                # 🚨 [완벽 수정 1] 드디어 404 에러의 주범이었던 2.5를 1.5로 확실히 바꿨습니다!
+                model='gemini-1.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    response_mime_type="application/json", # 🚨 [부활] 1.5-flash는 빠르니까 검사기를 켜도 안 멈춥니다! 무조건 완벽한 JSON만 출력하게 강제합니다!
+                    response_mime_type="application/json", 
                     max_output_tokens=2048, 
                     temperature=0.2 
                 )
             )
-# JSON 파싱
-            data = json.loads(response.text.strip(), strict=False)
+            
+            # 🚨 [완벽 수정 2] 선생님이 찾아주신 V28 껍데기 제거 완벽 방어막 부활! (Unterminated 방지)
+            raw_text = response.text.strip()
+            raw_text = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+            
+            # JSON 파싱 (strict=False가 제어문자 에러를 한 번 더 막아줍니다)
+            data = json.loads(raw_text, strict=False)
             
             jomun_list = data.get("조문리스트", [])
             if not jomun_list or not isinstance(jomun_list, list):
@@ -144,7 +149,6 @@ def run_ai_analysis(law, attempt_count=5):
             
         except Exception as e:
             error_msg = str(e)
-            # 🚨 [핵심 수정 3] 에러 메시지도 화면에 친절하게 띄워줍니다.
             if "503" in error_msg or "high demand" in error_msg.lower():
                 wait_time = 60 * (attempt + 1)
                 print(f"\n    🚨 [서버 폭주] {wait_time}초 대기 후 재시도합니다...", end="", flush=True)
