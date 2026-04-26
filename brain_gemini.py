@@ -86,7 +86,7 @@ def run_ai_analysis(law, attempt_count=5):
                 contents=prompt,
                 config=types.GenerateContentConfig(
 # 🚨 [핵심 변경] 버그가 많은 JSON 강제 모드를 끄고 AI의 자연스러운 출력을 유도!
-                    max_output_tokens=16384, 
+                    max_output_tokens=32768, 
                     temperature=0.1 # 🚨 창의성을 완전히 낮춰서 딴짓 못하게 기계로 만듭니다.
                 )
             )
