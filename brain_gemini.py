@@ -1,7 +1,7 @@
 import json
 import re
 import time
-import google.generativeai as genai
+import google.genai as genai
 
 from config import GEMINI_API_KEY, QNET_CERTS
 
