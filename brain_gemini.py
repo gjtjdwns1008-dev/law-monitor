@@ -4,19 +4,11 @@ import time
 from google import genai
 from google.genai import types
 
-# 💡 1단계 config 파일에서 제미나이 키와 자격증 리스트를 가져옵니다.
 from config import GEMINI_API_KEY, QNET_CERTS
 
-# 🚨 바로 이 줄입니다! 이 줄이 지워졌거나 오타가 나면 안 됩니다!
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# ==========================================
-# AI 분석 메인 함수
-# ==========================================
 def run_ai_analysis(law, attempt_count=5):
-    """
-    [V29 모듈화] 제미나이에게 마크다운 법령을 주고 JSON으로 결과를 받아옵니다.
-    """
     prompt = f"""
     당신은 '한국산업인력공단(HRDK)'의 국가기술자격 정책 수석 연구원입니다.
     아래 [최신 법령 원본]을 읽고, [국가기술자격 491개 종목 사전] 중 어떤 종목에 영향을 미치는지 분석하십시오.
@@ -82,13 +74,12 @@ def run_ai_analysis(law, attempt_count=5):
     }}
     """
 
-for attempt in range(attempt_count):
+    for attempt in range(attempt_count):
         if attempt > 0:
             print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
 
         try:
             response = client.models.generate_content(
-                # 🚨 [완벽 수정 1] 드디어 404 에러의 주범이었던 2.5를 1.5로 확실히 바꿨습니다!
                 model='gemini-1.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -98,11 +89,8 @@ for attempt in range(attempt_count):
                 )
             )
             
-            # 🚨 [완벽 수정 2] 선생님이 찾아주신 V28 껍데기 제거 완벽 방어막 부활! (Unterminated 방지)
             raw_text = response.text.strip()
             raw_text = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
-            
-            # JSON 파싱 (strict=False가 제어문자 에러를 한 번 더 막아줍니다)
             data = json.loads(raw_text, strict=False)
             
             jomun_list = data.get("조문리스트", [])
