@@ -97,8 +97,8 @@ def run_ai_analysis(law, attempt_count=5):
                     temperature=0.2 
                 )
             )
-            raw_text = response.text.strip().replace("```json", "").replace("```", "")
-            data = json.loads(raw_text, strict=False)
+# JSON 파싱
+            data = json.loads(response.text.strip(), strict=False)
             
             jomun_list = data.get("조문리스트", [])
             if not jomun_list or not isinstance(jomun_list, list):
