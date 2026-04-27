@@ -95,7 +95,11 @@ def create_excel_report(high_impact_laws, simple_related_laws, target_date=TARGE
 # ==========================================
 def send_webhook_with_file(fname, total, high, simple, target_date=TARGET_DATE):
     if not WEBHOOK_URL: return
-    summary_data = {"date": str(target_date), "total": f"{total}건", "high": f"{high}건", "simple": f"{simple}건"}
+    # 🌟 [근본 원인 해결!] 메일/웹훅으로 보낼 때도 사람이 읽기 편한 날짜로 변환해서 쏩니다!
+    display_date = f"{target_date[:4]}년 {target_date[4:6]}월 {target_date[6:]}일"
+    
+    # 이제 Make.com은 "20260428"이 아니라 "2026년 04월 28일" 이라는 데이터를 받게 됩니다!
+    summary_data = {"date": display_date, "total": f"{total}건", "high": f"{high}건", "simple": f"{simple}건"}
     try:
         if fname and os.path.exists(fname):
             with open(fname, 'rb') as f:
