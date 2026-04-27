@@ -32,7 +32,8 @@ def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET
         # 1) 총괄현황표 기록
         try:
             ws_summary = spreadsheet.worksheet("총괄현황표")
-            ws_summary.append_row([target_date, total_len, len(high_list), len(simple_list)])
+        # 🚨 [핵심 수정] RAW 옵션을 써서 구글 시트의 '자동 변환'을 강제로 막아버립니다!
+            ws_summary.append_row([display_date, total_len, len(high_list), len(simple_list)], value_input_option="RAW")
         # 🌟 [가운데 정렬 적용] A~D열 전체 가운데 정렬
             ws_summary.format("A:D", {
                 "horizontalAlignment": "CENTER",
