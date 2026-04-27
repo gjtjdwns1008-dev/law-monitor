@@ -26,10 +26,18 @@ def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_key(GOOGLE_SHEET_ID)
 
+        # 🌟 날짜 가독성 변환 (20260428 -> 2026년_04월_28일)
+        display_date = f"{target_date[:4]}년_{target_date[4:6]}월_{target_date[6:]}일"
+        
         # 1) 총괄현황표 기록
         try:
             ws_summary = spreadsheet.worksheet("총괄현황표")
             ws_summary.append_row([target_date, total_len, len(high_list), len(simple_list)])
+        # 🌟 [가운데 정렬 적용] A~D열 전체 가운데 정렬
+            ws_summary.format("A:D", {
+                "horizontalAlignment": "CENTER",
+                "verticalAlignment": "MIDDLE"
+            })
             print("  📊 총괄현황표 업데이트 완료")
         except: print("  ⚠️ '총괄현황표' 시트를 찾을 수 없어 건너뜁니다.")
 
