@@ -8,14 +8,23 @@ def main():
     print(f"🚀 [법령 모니터링 V29] {TARGET_DATE} 데이터 수집 및 분석 시작...\n" + "="*50)
     start_time = time.time()
 
-    # ==========================================
+# ==========================================
     # 1. 법령 수집 (프리필터링 포함)
     # ==========================================
     laws = get_base_laws()
     if not laws:
-        print("  ℹ️ 오늘 시행되는 법령이 없습니다.")
-        send_webhook_with_file(None, 0, 0, 0)
-        return
+        print(f"  ℹ️ {TARGET_DATE} 시행되는 법령이 없습니다. (0건 기록 및 빈 리포트 전송)")
+        
+        # 🌟 [해결 1] 구글 시트에 '0건'을 명시적으로 기록합니다.
+        upload_to_google_sheet(0, [], [])
+        
+        # 🌟 [해결 2] 0건이라도 '빈 엑셀 파일'을 생성하여 Make.com 에러를 방지합니다.
+        empty_excel = create_excel_report([], [])
+        
+        # 🌟 [해결 3] 빈 파일과 함께 웹훅을 쏩니다.
+        send_webhook_with_file(empty_excel, 0, 0, 0)
+        
+        return # 이제 시트 기록과 파일 전송을 마쳤으므로 종료해도 안전합니다.
 
     high_impact_laws, simple_related_laws, failed_queue = [], [], []
     all_results_for_sheet = [] # 구글 시트에 넣을 전체 마스터 데이터 모음
