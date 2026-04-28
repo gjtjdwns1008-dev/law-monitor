@@ -9,6 +9,23 @@ from config import GEMINI_API_KEY, QNET_CERTS
 # 🚨 [V29 최신 방식] 옛날 방식인 genai.configure는 완전히 사라졌습니다!
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# 🌟🌟🌟 [추가된 부분 1] 링크 조립 공장 (RESTful 포맷 생성기) 🌟🌟🌟
+def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_name):
+    """별표/서식인지 일반 조항인지 구분해서 법제처 RESTful 링크를 완성합니다."""
+    star_match = re.search(r'(별표|서식)\s*(\d+)', article_name)
+    if star_match:
+        target_id = f"{star_match.group(1)}{star_match.group(2)}" # 예: 별표2
+        return f"https://www.law.go.kr/법령별표서식/({law_name},{enforce_date},{target_id})"
+    
+    jo_match = re.search(r'(제\d+조(?:의\d+)?)', article_name)
+    if jo_match:
+        target_id = jo_match.group(1) # 예: 제5조
+        return f"https://www.law.go.kr/법령/{law_name}/({enforce_date},{prom_num},{prom_date})/{target_id}"
+    
+    # 조문 매칭 실패 시 그냥 기본 법령 링크로 보냄
+    return f"https://www.law.go.kr/법령/{law_name}"
+
+
 def run_ai_analysis(law, attempt_count=5):
     prompt = f"""
     당신은 '한국산업인력공단(HRDK)'의 국가기술자격 정책 수석 연구원입니다.
@@ -25,21 +42,20 @@ def run_ai_analysis(law, attempt_count=5):
     2. 연관성이 없으면 "종목": "", "분류": "일반", "검토필요": "X" 로 빠르게 결론 내리십시오.
     3. 모든 텍스트(요약, 분석, 사유 등)는 조문별로 핵심만 5문장 이내로 아주 간결하게 작성하십시오.
 
-
     [분석 및 판단 기준]
     1. 분류: '연관높음', '단순관련', '일반' 중 택1
     2. 활용도_구분: '연관높음'인 경우에만 [대폭 증가, 소폭 증가, 소폭 감소, 대폭 감소] 중 선택. 그 외는 빈칸("").
     3. 소관부처: 정부 부처명 추출.
     4. 개정유형: 제정, 일부개정, 전부개정 등 성격 추출.
     5. 조문리스트: 연관된 조문이 여러 개일 경우 **반드시 모두 추출**하여 배열 형태로 작성
-       - [주의] 제O조 형태: {{"조문명": "제23조의2", "숫자": "23.2"}} 
-       - [주의] 별표 형태: "별표1"이 아닌 "별표 1"과 같이 반드시 띄어쓰기를 지켜서 작성. (숫자는 빈칸 "")
+        - [주의] 제O조 형태: {{"조문명": "제23조의2", "숫자": "23.2"}} 
+        - [주의] 별표 형태: "별표1"이 아닌 "별표 1"과 같이 반드시 띄어쓰기를 지켜서 작성. (숫자는 빈칸 "")
     6. AI_신뢰도: 본 분석에 대한 AI의 객관적 확신도 ('높음', '보통', '낮음' 중 택1)
-       - 높음: 법령(바뀐조문/별표)에 '국가기술자격 종목 명칭'이 정확히 텍스트로 명시된 경우
-       - 보통: 명칭은 없으나 직무 내용상 연관성이 매우 높다고 강하게 추론되는 경우
-       - 낮음: 연관성을 억지로 논리적 비약을 통해 연결해야 하는 경우
+        - 높음: 법령(바뀐조문/별표)에 '국가기술자격 종목 명칭'이 정확히 텍스트로 명시된 경우
+        - 보통: 명칭은 없으나 직무 내용상 연관성이 매우 높다고 강하게 추론되는 경우
+        - 낮음: 연관성을 억지로 논리적 비약을 통해 연결해야 하는 경우
     7. 검토필요: 실무자의 교차 검증이 반드시 필요한 경우 'O', 아니면 'X'
-       - [체크(O) 필수 조건]: ① 'AI_신뢰도'가 '보통/낮음'이거나, ② '활용도_구분'이 '대폭 증가/감소'로 파급력이 큰 경우
+        - [체크(O) 필수 조건]: ① 'AI_신뢰도'가 '보통/낮음'이거나, ② '활용도_구분'이 '대폭 증가/감소'로 파급력이 큰 경우
     8. 검토사유: '검토필요'가 'O'인 경우에 한해, 그 이유를 구체적으로 작성 (예: "자격 명칭이 직접 명시되지 않아 실무자 확인 요망"). '검토필요'가 'X'이면 빈칸("").
 
     🔥 [작성 가이드라인: 주요 제·개정내용 (요약)] 🔥
@@ -81,33 +97,28 @@ def run_ai_analysis(law, attempt_count=5):
             print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
 
         try:
-            # 🚨 존재하는 최신 모델(2.5-flash) 사용 및 안전장치 결합
             response = client.models.generate_content(
                 model='gemini-2.5-flash', 
                 contents=prompt,
                 config=types.GenerateContentConfig(
-# 🚨 [핵심 변경] 버그가 많은 JSON 강제 모드를 끄고 AI의 자연스러운 출력을 유도!
                     max_output_tokens=32768, 
-                    temperature=0.1 # 🚨 창의성을 완전히 낮춰서 딴짓 못하게 기계로 만듭니다.
+                    temperature=0.1 
                 )
             )
             
             raw_text = response.text.strip()
 
-            # 1. 껍데기 벗기기
             match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL | re.IGNORECASE)
             if match:
                 json_str = match.group(1)
             else:
                 json_str = raw_text.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
             
-            # 🌟🌟 [무적 다리미] Unterminated string의 진범인 '엔터키(\n)'와 '탭(\t)'을 싹 다 공백으로 다려버립니다!
             json_str = json_str.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
             
             try:
                 data = json.loads(json_str, strict=False)
             except json.JSONDecodeError as je:
-                # 🌟🌟 [블랙박스 로그] 만약 또 실패한다면, 도대체 AI가 뭐라고 썼는지 화면에 박제합니다!
                 print(f"\n    🚨 [AI 문법 파괴 발생! 범인 색출 블랙박스 로그]")
                 print(f"    >> AI가 뱉은 날것의 텍스트:\n{json_str}\n")
                 raise Exception(f"JSON 문법 오류: {je}")
@@ -119,20 +130,28 @@ def run_ai_analysis(law, attempt_count=5):
             links_str_list = []
             names_str_list = []
             
+            # 🌟🌟🌟 [추가된 부분 2] 링크를 조립해서 리스트에 넣는 로직 🌟🌟🌟
             for j in jomun_list:
                 j_name = j.get("조문명", "확인불가")
                 if "별표" in j_name:
                     j_name = re.sub(r'별표\s*(\d+)', r'별표 \1', j_name)
-                    
-                j_num = str(j.get("숫자", "")).strip().replace(".", ":")
-                anchor = f"#J{j_num}" if j_num else ""
                 
                 if j_name == "내용 확인":
                     names_str_list.append("전체 (세부 조문 미지정)")
                     links_str_list.append(f"▶ {law['법령명']}\n{law['링크']}")
                 else:
                     names_str_list.append(j_name)
-                    links_str_list.append(f"▶ {law['법령명']} {j_name}\n{law['링크']}{anchor}")
+                    
+                    # law_api.py에서 주머니에 넣어둔 재료(공포번호 등)를 꺼내서 링크 완성!
+                    new_link = generate_new_law_link(
+                        law_name=law.get('법령명', ''),
+                        enforce_date=law.get('시행일자', ''),
+                        prom_num=law.get('공포번호', ''),
+                        prom_date=law.get('공포일자', ''),
+                        article_name=j_name
+                    )
+                    links_str_list.append(f"▶ {law['법령명']} {j_name}\n{new_link}")
+            # 🌟🌟🌟 (여기까지 변경됨) 🌟🌟🌟
                 
             links_str = "\n\n".join(links_str_list)
             names_str = ", ".join(names_str_list)
