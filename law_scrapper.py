@@ -5,7 +5,6 @@ import re
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# 💡 1단계에서 만든 config 파일에서 필요한 변수들을 불러옵니다!
 from config import LAW_API_KEY, TARGET_DATE
 
 # ==========================================
@@ -35,7 +34,7 @@ def get_base_laws(target_date=TARGET_DATE):
     """특정 일자의 법령을 수집하고, 프리필터링 및 텍스트 정제를 수행합니다."""
     all_laws_dict = {}
     
-# 🚨 [V29 핵심 최적화] AI가 볼 필요도 없는 잡초 키워드들! (선거 추가)
+    # 🚨 AI가 볼 필요도 없는 잡초 키워드들!
     SKIP_KEYWORDS = ['직제', '행정기구', '사무분장', '분장규정', '위원회', '정원', '위임전결', '선거', '복무규정', '인사규정', '여비규정', '표창규칙']
     
     for target_type in ['law', 'histlaw']:
@@ -50,25 +49,35 @@ def get_base_laws(target_date=TARGET_DATE):
                 if not law_nodes: break
                 
                 for law in law_nodes:
-                    law_id = law.find('법령일련번호').text if law.find('법령일련번호') is not None else ""
-                    law_name = law.find('법령명한글').text if law.find('법령명한글') is not None else "이름없음"
-                    enforce_date = law.find('시행일자').text if law.find('시행일자') is not None else ""
+                    # 🌟 1. 변수 이름을 law 로 통일! (elem 아님)
+                    law_id = law.findtext('법령일련번호', '')
+                    law_name = law.findtext('법령명', '')
+                    enforce_date = law.findtext('시행일자', '')
+
+                    # 🌟 2. 나중에 쓰기 위해 공포번호, 공포일자 재료 챙기기!
+                    prom_num_raw = law.findtext('공포번호', '')
+                    prom_num = re.sub(r'\D', '', prom_num_raw) # 숫자만 쏙 빼기
+                    prom_date = law.findtext('공포일자', '').strip()
+                    
                     if not law_id or law_name in all_laws_dict: continue
                     
-                    law_link = f"https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq={law_id}"
+                    # 🌟 3. 임시 기본 링크 세팅 (조문별 상세 링크는 brain_gemini.py에서 조립)
+                    base_law_link = f"https://www.law.go.kr/법령/{law_name}"
 
-                    # 💡 [프리필터링 가동] 법령 이름에 잡초 키워드가 있으면 내용 긁기를 생략!
+                    # 💡 [프리필터링 가동]
                     if any(k in law_name for k in SKIP_KEYWORDS):
                         all_laws_dict[law_name] = {
                             "법령명": law_name, 
                             "시행일자": enforce_date, 
+                            "공포번호": prom_num,  # 🌟 챙겨둔 재료 저장
+                            "공포일자": prom_date,  # 🌟 챙겨둔 재료 저장
                             "원본": "조직/기구 관련 법령으로 AI 분석 생략", 
-                            "링크": law_link,
-                            "스킵여부": True  # 나중에 main.py에서 이걸 보고 AI에게 안 보냅니다!
+                            "링크": base_law_link,
+                            "스킵여부": True 
                         }
-                        continue # 바로 다음 법령으로 넘어갑니다. (속도 대폭 향상)
+                        continue
 
-                    # --- 여기부터는 진짜 분석해야 할 법령들만 긁어옵니다 ---
+                    # --- 진짜 분석해야 할 법령 디테일 수집 ---
                     detail_url = f"https://www.law.go.kr/DRF/lawService.do?OC={LAW_API_KEY}&target={target_type}&MST={law_id}&type=XML"
                     detail_response = session.get(detail_url, headers=HEADERS, timeout=15)
                     detail_root = ET.fromstring(detail_response.text)
@@ -107,12 +116,15 @@ def get_base_laws(target_date=TARGET_DATE):
                     
                     full_text = full_text[:15000]
                     
+                    # 🌟 4. 정상 법령 딕셔너리에 재료 추가
                     all_laws_dict[law_name] = {
                         "법령명": law_name, 
                         "시행일자": enforce_date, 
+                        "공포번호": prom_num,  # 🌟 챙겨둔 재료 저장
+                        "공포일자": prom_date,  # 🌟 챙겨둔 재료 저장
                         "원본": full_text, 
-                        "링크": law_link,
-                        "스킵여부": False # 정상 법령이므로 AI에게 보냅니다!
+                        "링크": base_law_link,
+                        "스킵여부": False 
                     }
                     time.sleep(0.1) 
                 if len(law_nodes) < 100: break
