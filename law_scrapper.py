@@ -51,7 +51,9 @@ def get_base_laws(target_date=TARGET_DATE):
                 for law in law_nodes:
                     # 🌟 1. 변수 이름을 law 로 통일! (elem 아님)
                     law_id = law.findtext('법령일련번호', '')
-                    law_name = law.findtext('법령명', '')
+                    law_name = law.findtext('법령명한글', '').strip()  # 🌟 완벽한 해결책!
+                    enforce_date = law.findtext('시행일자', '')
+
                     enforce_date = law.findtext('시행일자', '')
 
                     # 🌟 2. 나중에 쓰기 위해 공포번호, 공포일자 재료 챙기기!
