@@ -18,8 +18,13 @@ GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 KST = timezone(timedelta(hours=9))
 today = datetime.now(KST)
 
+# 🌟 [D-1 로직 적용] 오늘(today)에서 1일을 뺀 어제 날짜를 계산합니다.
+yesterday = today - timedelta(days=1)
+TARGET_DATE = yesterday.strftime("%Y%m%d") # 이제 오전 5시에 돌아도 어제 법령 11건을 다 가져옵니다!
+
+
 # 💡 만약 과거 데이터를 돌리고 싶다면 이 변수를 수동으로 바꿔서 쓰면 됩니다.# today.strftime("%Y%m%d") 
-TARGET_DATE = today.strftime("%Y%m%d")
+# 💡 TARGET_DATE = today.strftime("%Y%m%d")
 
 # 엑셀 및 구글 시트에 들어갈 컬럼명
 COLUMNS = [
