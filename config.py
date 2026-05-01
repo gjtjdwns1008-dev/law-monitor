@@ -20,7 +20,7 @@ today = datetime.now(KST)
 
 # 🌟 [D-1 로직 적용] 오늘(today)에서 1일을 뺀 어제 날짜를 계산합니다.
 yesterday = today - timedelta(days=1)
-# 💡 TARGET_DATE = "20260429"  
+TARGET_DATE = "20260429"  
 
 # 💡 만약 과거 데이터를 돌리고 싶다면 이 변수를 수동으로 바꿔서 쓰면 됩니다.
 # 💡 TARGET_DATE = "20260429"
