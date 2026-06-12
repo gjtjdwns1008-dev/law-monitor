@@ -12,17 +12,24 @@ def main():
     # 1. 법령 수집 (프리필터링 포함)
     # ==========================================
     laws = get_base_laws()
+    # [1단계 방어] 스크래퍼가 타임아웃 에러(None)를 던졌을 때 제일 먼저 낚아챕니다!
+    if laws is None:
+        print("❌ [결정적 오류] 법제처 API 서버 통신 완전 실패. 시스템을 안전하게 종료합니다.")
+        print("  ⚠️ 잘못된 '0건 리포트' 발송을 방지하기 위해 웹훅 전송을 차단했습니다.")
+        
+        # (구글 시트 총괄현황표에 에러를 적는 코드가 있다면 여기에 넣고 종료)
+        # upload_to_google_sheet(0, [], status="🔴 시스템 에러 (법제처 API)", log="법제처 타임아웃")
+        
+        return  # 🚨 여기서 시스템을 아예 종료시켜야 아래의 0건 리포트로 넘어가지 않습니다!
+
+    # [2단계 방어] 에러가 아닌데 진짜로 오늘 공포된 법령이 하나도 없을 때 (빈 리스트 [])
     if not laws:
         print(f"  ℹ️ {TARGET_DATE} 시행되는 법령이 없습니다. (0건 기록 및 빈 리포트 전송)")
         
-        # 🌟 [해결 1] 구글 시트에 '0건'을 명시적으로 기록합니다.
-        upload_to_google_sheet(0, [], [])
-        
-        # 🌟 [해결 2] 0건이라도 '빈 엑셀 파일'을 생성하여 Make.com 에러를 방지합니다.
-        empty_excel = create_excel_report([], [])
-        
-        # 🌟 [해결 3] 빈 파일과 함께 웹훅을 쏩니다.
-        send_webhook_with_file(empty_excel, 0, 0, 0)
+        # 0건 리포트 정상 발송 로직
+        # upload_to_google_sheet(0, [])
+        # empty_excel = create_excel_report([])
+        # send_webhook_with_file(empty_excel, 0, 0, 0)
         
         return # 이제 시트 기록과 파일 전송을 마쳤으므로 종료해도 안전합니다.
 
