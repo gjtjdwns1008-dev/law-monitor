@@ -24,11 +24,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         python -m pip install --upgrade pip
-    - name: Install shared core library
-      run: |
-          pip install \
-            "hrdk-law-core @ git+https://github.com/${{ secrets.GITHUB_ACCOUNT }}/hrdk-law-core.git"
-          pip install -r requirements.txt
+        git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+        pip install -r requirements.txt
 
     - name: 🚀 V29 메인 스크립트 실행
       env:
