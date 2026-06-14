@@ -4,7 +4,7 @@ on:
   schedule:
     # ⏰ 깃허브는 UTC 기준이므로, 한국 새벽 5시 = UTC 전날 밤 8시(20)입니다.
     - cron: '23 20 * * *'
-  workflow_dispatch: # 🔘 수동으로 테스트 실행할 수 있는 버튼을 만들어줍니다.
+  workflow_dispatch:
 
 jobs:
   run-monitor:
@@ -27,11 +27,22 @@ jobs:
         git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
         pip install -r requirements.txt
 
-    - name: 🚀 V29 메인 스크립트 실행
+    - name: 🚀 V29 메인 스크립트 실행 (법제처 타임아웃 시 최대 3회 자동 재시도)
       env:
         LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
-      run: python main.py
+      run: |
+        for i in 1 2 3; do
+          echo "🔄 실행 시도 $i/3..."
+          python main.py && break
+          if [ $i -lt 3 ]; then
+            echo "⏳ 법제처 서버 회복 대기 중... 5분 후 재시도합니다."
+            sleep 300
+          else
+            echo "💀 3회 모두 실패. 오늘 수집을 종료합니다."
+            exit 1
+          fi
+        done
