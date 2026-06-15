@@ -1,13 +1,15 @@
 import json
 import re
-import time
-from google import genai
-from google.genai import types
+from hrdk_law_core.llm_client import get_llm_client
+from hrdk_law_core.certs import get_qnet_certs_text
 
-from config import GEMINI_API_KEY, QNET_CERTS
-
-# 🚨 [V29 최신 방식] 옛날 방식인 genai.configure는 완전히 사라졌습니다!
-client = genai.Client(api_key=GEMINI_API_KEY)
+# 🌟 [모델 추상화] Gemini 직접 호출 대신 통역 창구 사용. LLM_PROVIDER로 모델 교체 가능.
+_llm = None
+def _client():
+    global _llm
+    if _llm is None:
+        _llm = get_llm_client()
+    return _llm
 
 # 🌟🌟🌟 [추가된 부분 1] 링크 조립 공장 (RESTful 포맷 생성기) 🌟🌟🌟
 def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_name):
@@ -27,6 +29,7 @@ def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_n
 
 
 def run_ai_analysis(law, attempt_count=5):
+    QNET_CERTS = get_qnet_certs_text(group_by_field=True)  # 🌟 코어 단일 출처에서 종목 로드
     prompt = f"""
     당신은 '한국산업인력공단(HRDK)'의 국가기술자격 정책 수석 연구원입니다.
     아래 [최신 법령 원본]을 읽고, [국가기술자격 491개 종목 사전] 중 어떤 종목에 영향을 미치는지 분석하십시오.
@@ -92,21 +95,15 @@ def run_ai_analysis(law, attempt_count=5):
     }}
     """
 
-    for attempt in range(attempt_count):
-        if attempt > 0:
-            print(f"\n    🔄 [재시도 {attempt}/{attempt_count-1}] 구글 서버 다시 찌르는 중... ", end="", flush=True)
+    try:
+        raw_text = _client().generate_with_retry(
+            prompt, attempt_count=attempt_count,
+            max_output_tokens=32768, temperature=0.1,
+        )
+    except Exception as e:
+        return False, "", {"error": str(e)}
 
-        try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash', 
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=32768, 
-                    temperature=0.1 
-                )
-            )
-            
-            raw_text = response.text.strip()
+    try:
 
             match = re.search(r'```json\s*(.*?)\s*```', raw_text, re.DOTALL | re.IGNORECASE)
             if match:
@@ -121,7 +118,7 @@ def run_ai_analysis(law, attempt_count=5):
             except json.JSONDecodeError as je:
                 print(f"\n    🚨 [AI 문법 파괴 발생! 범인 색출 블랙박스 로그]")
                 print(f"    >> AI가 뱉은 날것의 텍스트:\n{json_str}\n")
-                raise Exception(f"JSON 문법 오류: {je}")
+                return False, "", {"error": f"JSON 문법 오류: {je}"}
 
             jomun_list = data.get("조문리스트", [])
             if not jomun_list or not isinstance(jomun_list, list):
@@ -172,19 +169,6 @@ def run_ai_analysis(law, attempt_count=5):
                 "조문별 다이렉트 링크": links_str
             }
             return True, data.get("분류", ""), law_info
-            
-        except Exception as e:
-            error_msg = str(e)
-            if "503" in error_msg or "high demand" in error_msg.lower():
-                wait_time = 60 * (attempt + 1)
-                print(f"\n    🚨 [서버 폭주] {wait_time}초 대기 후 재시도합니다...", end="", flush=True)
-            elif "timeout" in error_msg.lower():
-                wait_time = 15 * (attempt + 1)
-                print(f"\n    🚨 [구글 무응답(Timeout)] {wait_time}초 대기 후 재시도...", end="", flush=True)
-            else:
-                wait_time = 15 * (attempt + 1)
-                print(f"\n    🚨 [기타 에러: {error_msg[:30]}...] {wait_time}초 대기...", end="", flush=True)
-                
-            time.sleep(wait_time)
-            
-    return False, "", {"error": error_msg if 'error_msg' in locals() else "재시도 초과"}
+
+    except Exception as e:
+        return False, "", {"error": str(e)}
