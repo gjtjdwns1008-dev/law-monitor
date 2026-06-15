@@ -15,6 +15,9 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 GCP_SA_JSON = os.environ.get("GCP_SA_JSON")
 GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 
+# Phase 1 신규: SQLite 지식베이스 경로 (RADAR와 공유)
+DB_PATH = os.environ.get("DB_PATH", "hrdk_law.db")
+
 # ==========================================
 # 2. 날짜 및 공통 변수 설정
 # ==========================================

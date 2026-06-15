@@ -1,7 +1,6 @@
 import json
 import re
 from hrdk_law_core.llm_client import get_llm_client
-from hrdk_law_core.certs import get_qnet_certs_text, get_relevant_certs_text
 
 # 🌟 [모델 추상화] Gemini 직접 호출 대신 통역 창구 사용. LLM_PROVIDER로 모델 교체 가능.
 _llm = None
@@ -28,14 +27,13 @@ def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_n
     return f"https://www.law.go.kr/법령/{law_name}"
 
 
-def run_ai_analysis(law, attempt_count=5):
-    QNET_CERTS = get_relevant_certs_text(law.get("원본", ""), group_by_field=True)  # 🌟 슬림화(누락 시 전체 폴백)
+def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     prompt = f"""
     당신은 '한국산업인력공단(HRDK)'의 국가기술자격 정책 수석 연구원입니다.
     아래 [최신 법령 원본]을 읽고, [국가기술자격 491개 종목 사전] 중 어떤 종목에 영향을 미치는지 분석하십시오.
 
     [국가기술자격 491개 종목 사전]
-    {QNET_CERTS}
+    {qnet_certs_text}
 
     [최신 법령 제·개정 내용 (마크다운)]
     {law['원본']}
