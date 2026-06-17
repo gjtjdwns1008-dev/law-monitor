@@ -24,10 +24,11 @@ from brain_gemini import run_ai_analysis
 from report_maker import upload_to_google_sheet, create_excel_report, send_webhook_with_file
 
 
-def process_one_day(target_date: str, kb) -> bool:
+def process_one_day(target_date: str, kb, run_note: str = "") -> bool:
     """
     하루치(target_date) 법령을 수집·분석·저장·보고합니다.
     반환: 처리 성공 여부 (수집 실패 시 False → 그날은 다음 기회에 재시도).
+    run_note: 수동 실행 시 로그 접두어 (예: '[수동 6/17 실행] ').
     """
     print(f"\n{'='*50}\n📅 [{target_date}] 처리 시작\n{'='*50}")
 
@@ -41,7 +42,7 @@ def process_one_day(target_date: str, kb) -> bool:
         print(f"  ℹ️ [{target_date}] 시행 법령 없음 (0건)")
         upload_to_google_sheet(0, [], [], target_date=target_date,
             status="🟢 정상 작동 (공포 법령 없음)",
-            log=f"{target_date}: 새로 시행되는 국가 법령이 없습니다.")
+            log=f"{run_note}{target_date}: 새로 시행되는 국가 법령이 없습니다.")
         return True  # 0건도 '처리 완료'로 간주 (밀린 목록에서 제거)
 
     high_impact_laws, simple_related_laws = [], []
@@ -104,7 +105,7 @@ def process_one_day(target_date: str, kb) -> bool:
 
     # 저장 & 보고
     print("\n📝 구글 시트 적재...")
-    log_text = (f"{target_date}: 총 {len(laws)}건 중 "
+    log_text = (f"{run_note}{target_date}: 총 {len(laws)}건 중 "
                 f"연관높음 {len(high_impact_laws)}건, 단순관련 {len(simple_related_laws)}건")
     upload_to_google_sheet(len(laws), high_impact_laws, simple_related_laws,
                            target_date=target_date, status="🟢 정상 작동", log=log_text)
@@ -123,7 +124,33 @@ def main():
     kb = KnowledgeBase(DB_PATH)
     print(f"📚 지식베이스 로드 완료 ({DB_PATH})")
 
-    # ── 1. 오늘이 '되는 날'인지 확인 ──────────────────────
+    # ── [수동 실행 모드] 특정 일자만 처리 (연결 확인보다 먼저 — 대상 날짜를 알아야 함) ──
+    manual_date = os.environ.get("MANUAL_DATE", "").strip()
+    if manual_date:
+        from datetime import datetime, timezone, timedelta
+        run_day = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        if not is_valid_target_date(manual_date):
+            print(f"❌ 잘못된 날짜: '{manual_date}'. YYYYMMDD 형식의 과거(또는 오늘) 날짜여야 합니다.")
+            sys.exit(1)
+        print(f"🔧 [수동 실행] {manual_date} 한 날짜만 처리합니다. (자동 백필 상태는 변경하지 않음)")
+        # 수동 실행도 연결 확인 — 단, 실패해도 '대상 날짜(manual_date)' 행에 기록
+        if not check_law_reachable(LAW_API_KEY):
+            print(f"❌ [수동 실행] 법제처 연결 불가. {manual_date} 처리 실패.")
+            try:
+                upload_to_google_sheet(0, [], [], target_date=manual_date,
+                    status="🔴 법제처 연결 불가 (IP 차단 추정)",
+                    log=f"[수동 {run_day} 실행] 법제처 연결 실패. 되는 날 재시도 필요.")
+            except Exception:
+                pass
+            sys.exit(1)
+        ok = process_one_day(manual_date, kb, run_note=f"[수동 {run_day} 실행] ")
+        # ⚠️ mark_done 호출하지 않음 — 수동 실행이 자동 백필을 꼬이게 하면 안 됨
+        print(f"\n🎉 [수동 실행 종료] {manual_date} 처리 {'성공' if ok else '실패'}")
+        if not ok:
+            sys.exit(1)
+        return
+
+    # ── 1. 오늘이 '되는 날'인지 확인 (자동 실행) ──────────
     if not check_law_reachable(LAW_API_KEY):
         print("❌ 법제처 연결 불가 (오늘은 IP 차단일로 판단). 재시도 없이 종료합니다.")
         print("   → 밀린 날짜는 연결되는 다음 날 자동으로 따라잡습니다.")
@@ -138,20 +165,6 @@ def main():
             pass
         sys.exit(1)
     print("✅ 법제처 연결 확인됨. 처리 시작.")
-
-    # ── [수동 실행 모드] 특정 일자만 처리 (백필 상태 건드리지 않음) ──
-    manual_date = os.environ.get("MANUAL_DATE", "").strip()
-    if manual_date:
-        if not is_valid_target_date(manual_date):
-            print(f"❌ 잘못된 날짜: '{manual_date}'. YYYYMMDD 형식의 과거(또는 오늘) 날짜여야 합니다.")
-            sys.exit(1)
-        print(f"🔧 [수동 실행] {manual_date} 한 날짜만 처리합니다. (자동 백필 상태는 변경하지 않음)")
-        ok = process_one_day(manual_date, kb)
-        # ⚠️ mark_done 호출하지 않음 — 수동 실행이 자동 백필을 꼬이게 하면 안 됨
-        print(f"\n🎉 [수동 실행 종료] {manual_date} 처리 {'성공' if ok else '실패'}")
-        if not ok:
-            sys.exit(1)
-        return
 
     # ── 2. 밀린 날짜 목록 계산 (마지막 성공일+1 ~ 어제) ──
     dates = pending_dates(kb)
