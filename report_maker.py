@@ -12,8 +12,10 @@ from config import COLUMNS, WEBHOOK_URL, GCP_SA_JSON, GOOGLE_SHEET_ID, TARGET_DA
 # ==========================================
 # 1. 구글 시트 마스터 DB 적재 (V28 분류 로직 적용)
 # ==========================================
-def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET_DATE):
-    """[V29 최종] 3개 시트에 데이터를 분류하여 적재합니다."""
+def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET_DATE,
+                           status="🟢 정상 작동", log=""):
+    """[V29 최종] 3개 시트에 데이터를 분류하여 적재합니다.
+    status/log: 총괄현황표에 통신·처리 상태를 함께 기록 (백필 추적용)."""
     if not GCP_SA_JSON or not GOOGLE_SHEET_ID:
         print("  ⚠️ 구글 시트 설정 정보가 없어 적재를 건너뜁니다.")
         return
@@ -28,19 +30,22 @@ def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET
 
         # 🌟 날짜 가독성 변환 (20260428 -> 2026년_04월_28일)
         display_date = f"{target_date[:4]}년_{target_date[4:6]}월_{target_date[6:]}일"
-        
-        # 1) 총괄현황표 기록
+
+        # 1) 총괄현황표 기록 (상태/로그 칸 포함 — 통신 이력이 남음)
         try:
             ws_summary = spreadsheet.worksheet("총괄현황표")
-        # 🚨 [핵심 수정] RAW 옵션을 써서 구글 시트의 '자동 변환'을 강제로 막아버립니다!
-            ws_summary.append_row([display_date, total_len, len(high_list), len(simple_list)], value_input_option="RAW")
-        # 🌟 [가운데 정렬 적용] A~D열 전체 가운데 정렬
+        # 🚨 [핵심] RAW 옵션으로 구글 시트의 '자동 변환'을 막습니다.
+            ws_summary.append_row(
+                [display_date, total_len, len(high_list), len(simple_list), status, log],
+                value_input_option="RAW",
+            )
             ws_summary.format("A:D", {
                 "horizontalAlignment": "CENTER",
                 "verticalAlignment": "MIDDLE"
             })
             print("  📊 총괄현황표 업데이트 완료")
-        except: print("  ⚠️ '총괄현황표' 시트를 찾을 수 없어 건너뜁니다.")
+        except Exception as se:
+            print(f"  ⚠️ '총괄현황표' 시트 기록 실패: {se}")
 
         # 데이터 변환 함수
         def prepare_rows(laws):
