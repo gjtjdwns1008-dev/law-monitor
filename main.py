@@ -42,7 +42,7 @@ def process_one_day(target_date: str, kb, run_note: str = "") -> bool:
         print(f"  ℹ️ [{target_date}] 시행 법령 없음 (0건)")
         upload_to_google_sheet(0, [], [], target_date=target_date,
             status="🟢 정상 작동 (공포 법령 없음)",
-            log=f"{run_note}{target_date}: 새로 시행되는 국가 법령이 없습니다.")
+            log=f"{run_note}새로 시행되는 국가 법령이 없습니다.")
         return True  # 0건도 '처리 완료'로 간주 (밀린 목록에서 제거)
 
     high_impact_laws, simple_related_laws = [], []
@@ -105,7 +105,7 @@ def process_one_day(target_date: str, kb, run_note: str = "") -> bool:
 
     # 저장 & 보고
     print("\n📝 구글 시트 적재...")
-    log_text = (f"{run_note}{target_date}: 총 {len(laws)}건 중 "
+    log_text = (f"{run_note}총 {len(laws)}건 중 "
                 f"연관높음 {len(high_impact_laws)}건, 단순관련 {len(simple_related_laws)}건")
     upload_to_google_sheet(len(laws), high_impact_laws, simple_related_laws,
                            target_date=target_date, status="🟢 정상 작동", log=log_text)
@@ -139,11 +139,11 @@ def main():
             try:
                 upload_to_google_sheet(0, [], [], target_date=manual_date,
                     status="🔴 법제처 연결 불가 (IP 차단 추정)",
-                    log=f"[수동 {run_day} 실행] 법제처 연결 실패. 되는 날 재시도 필요.")
+                    log="[수동 실행] 법제처 연결 실패. 되는 날 재시도 필요.")
             except Exception:
                 pass
             sys.exit(1)
-        ok = process_one_day(manual_date, kb, run_note=f"[수동 {run_day} 실행] ")
+        ok = process_one_day(manual_date, kb, run_note="[수동 실행] ")
         # ⚠️ mark_done 호출하지 않음 — 수동 실행이 자동 백필을 꼬이게 하면 안 됨
         print(f"\n🎉 [수동 실행 종료] {manual_date} 처리 {'성공' if ok else '실패'}")
         if not ok:
