@@ -2,8 +2,14 @@ name: Daily Law Monitor V29
 
 on:
   schedule:
-    # ⏰ 깃허브는 UTC 기준이므로, 한국 새벽 5시 = UTC 전날 밤 8시(20)입니다.
-    - cron: '23 20 * * *'
+    # 🎲 하루 5회, 한국시간 기준 랜덤 분산 (RADAR와 겹치지 않는 시각).
+    # GitHub IP 무작위 추첨 → 여러 번 시도로 당첨 확률↑. 백필이 중복 처리 방지.
+    # (cron은 UTC 기준. 한국시간 = UTC + 9)
+    - cron: '38 20 * * *'   # KST 05:38
+    - cron: '22 0 * * *'    # KST 09:22
+    - cron: '56 4 * * *'    # KST 13:56
+    - cron: '41 8 * * *'    # KST 17:41
+    - cron: '17 13 * * *'   # KST 22:17
   workflow_dispatch:
 
 jobs:
