@@ -31,19 +31,24 @@ def upload_to_google_sheet(total_len, high_list, simple_list, target_date=TARGET
         # 🌟 날짜 가독성 변환 (20260428 -> 2026년_04월_28일)
         display_date = f"{target_date[:4]}년_{target_date[4:6]}월_{target_date[6:]}일"
 
-        # 1) 총괄현황표 기록 (상태/로그 칸 포함 — 통신 이력이 남음)
+        # 1) 총괄현황표 기록 [옵션 B] — 같은 날짜 행에 시도 이력 누적
+        #    상태 칸 예: "04:13🔴 → 08:47🔴 → 12:31🟢" (한 줄로 그날 이력 전체 확인)
         try:
-            ws_summary = spreadsheet.worksheet("총괄현황표")
-        # 🚨 [핵심] RAW 옵션으로 구글 시트의 '자동 변환'을 막습니다.
-            ws_summary.append_row(
-                [display_date, total_len, len(high_list), len(simple_list), status, log],
-                value_input_option="RAW",
+            from hrdk_law_core.sheets import upsert_daily_summary_row
+            # status 문자열에서 심볼만 추출 (🟢/🔴/🟡)
+            symbol = "🟢"
+            for s in ("🔴", "🟡", "🟢"):
+                if s in status:
+                    symbol = s
+                    break
+            upsert_daily_summary_row(
+                spreadsheet,
+                sheet_name="총괄현황표",
+                target_date_display=display_date,
+                cols_before_status=[display_date, total_len, len(high_list), len(simple_list)],
+                status_symbol=symbol,
+                log=log,
             )
-            ws_summary.format("A:D", {
-                "horizontalAlignment": "CENTER",
-                "verticalAlignment": "MIDDLE"
-            })
-            print("  📊 총괄현황표 업데이트 완료")
         except Exception as se:
             print(f"  ⚠️ '총괄현황표' 시트 기록 실패: {se}")
 
