@@ -38,7 +38,9 @@ def process_one_day(target_date: str, kb) -> bool:
 
     if not laws:
         print(f"  ℹ️ [{target_date}] 시행 법령 없음 (0건)")
-        upload_to_google_sheet(0, [], [], target_date=target_date)
+        upload_to_google_sheet(0, [], [], target_date=target_date,
+            status="🟢 정상 작동 (공포 법령 없음)",
+            log=f"{target_date}: 새로 시행되는 국가 법령이 없습니다.")
         return True  # 0건도 '처리 완료'로 간주 (밀린 목록에서 제거)
 
     high_impact_laws, simple_related_laws = [], []
@@ -101,7 +103,10 @@ def process_one_day(target_date: str, kb) -> bool:
 
     # 저장 & 보고
     print("\n📝 구글 시트 적재...")
-    upload_to_google_sheet(len(laws), high_impact_laws, simple_related_laws, target_date=target_date)
+    log_text = (f"{target_date}: 총 {len(laws)}건 중 "
+                f"연관높음 {len(high_impact_laws)}건, 단순관련 {len(simple_related_laws)}건")
+    upload_to_google_sheet(len(laws), high_impact_laws, simple_related_laws,
+                           target_date=target_date, status="🟢 정상 작동", log=log_text)
     print("📊 엑셀 보고서 생성...")
     excel_filename = create_excel_report(high_impact_laws, simple_related_laws, target_date=target_date)
     print("🚀 웹훅 전송...")
@@ -121,6 +126,15 @@ def main():
     if not check_law_reachable(LAW_API_KEY):
         print("❌ 법제처 연결 불가 (오늘은 IP 차단일로 판단). 재시도 없이 종료합니다.")
         print("   → 밀린 날짜는 연결되는 다음 날 자동으로 따라잡습니다.")
+        # 🌟 연결 실패도 총괄현황표에 기록 (통신 이력이 남도록)
+        from datetime import datetime, timedelta, timezone
+        kst_today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+        try:
+            upload_to_google_sheet(0, [], [], target_date=kst_today,
+                status="🔴 법제처 연결 불가 (IP 차단 추정)",
+                log="오늘 연결 실패. 밀린 날짜는 다음 연결일에 백필됩니다.")
+        except Exception:
+            pass
         sys.exit(1)
     print("✅ 법제처 연결 확인됨. 처리 시작.")
 
