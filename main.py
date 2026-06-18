@@ -24,15 +24,21 @@ from brain_gemini import run_ai_analysis
 from report_maker import upload_to_google_sheet, create_excel_report, send_webhook_with_file
 
 
-def process_one_day(target_date: str, kb, run_note: str = "") -> bool:
+def process_one_day(target_date: str, kb, run_note: str = "",
+                    prefetched_laws: list | None = None) -> bool:
     """
     하루치(target_date) 법령을 수집·분석·저장·보고합니다.
     반환: 처리 성공 여부 (수집 실패 시 False → 그날은 다음 기회에 재시도).
     run_note: 수동 실행 시 로그 접두어 (예: '[수동 6/17 실행] ').
+    prefetched_laws: 미리 스크랩한 법령 리스트. 주어지면 법제처 재호출 안 함.
     """
     print(f"\n{'='*50}\n📅 [{target_date}] 처리 시작\n{'='*50}")
 
-    laws = get_base_laws(api_key=LAW_API_KEY, target_date=target_date)
+    if prefetched_laws is not None:
+        laws = prefetched_laws
+        print(f"  📂 [{target_date}] 저장된 스크랩 사용 ({len(laws)}건) — 법제처 재호출 안 함")
+    else:
+        laws = get_base_laws(api_key=LAW_API_KEY, target_date=target_date)
 
     if laws is None:
         print(f"  ❌ [{target_date}] 법제처 수집 실패 (이 날짜는 다음 기회에 재시도)")
@@ -117,6 +123,69 @@ def process_one_day(target_date: str, kb, run_note: str = "") -> bool:
     return True
 
 
+def scrape_only():
+    """[스크랩 모드] 법제처에서 밀린 날짜를 수집해 디스크에 JSON 저장만. AI 분석 안 함."""
+    from hrdk_law_core.scrape_store import is_scraped, save_scraped
+    print("🛰️ [스크랩 모드] 법제처 수집 → 디스크 저장\n" + "=" * 50)
+    kb = KnowledgeBase(DB_PATH)
+    if not check_law_reachable(LAW_API_KEY):
+        print("❌ 법제처 연결 불가 (IP 차단일 추정). 다음 스케줄에 재시도.")
+        sys.exit(0)
+    print("✅ 법제처 연결 확인됨.")
+    dates = pending_dates(kb)
+    if not dates:
+        print("ℹ️ 스크랩할 밀린 날짜가 없습니다.")
+        return
+    print(f"📋 스크랩 대상 {len(dates)}일: {dates[0]} ~ {dates[-1]}")
+    scraped, skipped, failed = 0, 0, 0
+    for d in dates:
+        if is_scraped(d):
+            print(f"  ⏭️ [{d}] 이미 스크랩됨 (건너뜀)")
+            skipped += 1
+            continue
+        laws = get_base_laws(api_key=LAW_API_KEY, target_date=d)
+        if laws is None:
+            print(f"  ❌ [{d}] 수집 실패 — 다음 스케줄에 재시도")
+            failed += 1
+            break
+        save_scraped(d, laws)
+        print(f"  💾 [{d}] 스크랩 저장 완료 ({len(laws)}건)")
+        scraped += 1
+    print(f"\n🎉 [스크랩 종료] 신규 {scraped}일 / 기존 {skipped}일 / 실패 {failed}일")
+
+
+def analyze_only():
+    """[분석 모드] 저장된 스크랩을 읽어 AI 분석·저장. 법제처 재호출 없음."""
+    from hrdk_law_core.scrape_store import load_scraped
+    print("🧠 [분석 모드] 저장된 스크랩 → AI 분석\n" + "=" * 50)
+    kb = KnowledgeBase(DB_PATH)
+    print(f"📚 지식베이스 로드 완료 ({DB_PATH})")
+    dates = pending_dates(kb)
+    if not dates:
+        print("ℹ️ 분석할 밀린 날짜가 없습니다.")
+        return
+    done, failed, no_data = 0, 0, 0
+    for d in dates:
+        laws = load_scraped(d)
+        if laws is None:
+            print(f"  ⏳ [{d}] 스크랩 데이터 없음 — 아직 수집 안 됨 (중단)")
+            no_data += 1
+            break
+        try:
+            if process_one_day(d, kb, prefetched_laws=laws):
+                mark_done(kb, d)
+                done += 1
+            else:
+                failed += 1
+                print(f"  ⏸️ [{d}] 분석 실패. 다음 실행에서 재시도.")
+                break
+        except Exception as e:
+            print(f"  💥 [{d}] 분석 중 오류: {e}")
+            failed += 1
+            break
+    print(f"\n🎉 [분석 종료] 완료 {done}일 / 실패 {failed}일 / 미수집 {no_data}일")
+
+
 def main():
     print("🚀 [law-monitor] 시작\n" + "=" * 50)
     start_time = time.time()
@@ -198,4 +267,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import os as _os
+    _mode = _os.environ.get("RUN_MODE", "").strip().lower()
+    if _mode == "scrape":
+        scrape_only()
+    elif _mode == "analyze":
+        analyze_only()
+    else:
+        main()
