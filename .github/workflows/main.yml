@@ -1,21 +1,59 @@
-name: Daily Law Monitor V29
+name: law-monitor
 
 on:
   schedule:
-    # 🎲 하루 5회, 한국시간 기준 랜덤 분산 (RADAR와 겹치지 않는 시각).
-    # GitHub IP 무작위 추첨 → 여러 번 시도로 당첨 확률↑. 백필이 중복 처리 방지.
+    # 🎲 하루 34회, 한국시간 기준 변동 간격으로 분산 시도.
+    # RADAR와 최소 10분 이상 엇갈리게 배치 (제미나이/IP 부하 분산).
+    # 정각·10분 단위 회피. 백필이 중복 처리를 자동 방지.
+    # ⚠️ Public 레포 → Actions 분 무제한.
     # (cron은 UTC 기준. 한국시간 = UTC + 9)
-    - cron: '38 20 * * *'   # KST 05:38
-    - cron: '22 0 * * *'    # KST 09:22
-    - cron: '56 4 * * *'    # KST 13:56
-    - cron: '41 8 * * *'    # KST 17:41
-    - cron: '17 13 * * *'   # KST 22:17
+    - cron: '21 15 * * *'   # KST 00:21
+    - cron: '23 16 * * *'   # KST 01:23
+    - cron: '52 16 * * *'   # KST 01:52
+    - cron: '12 18 * * *'   # KST 03:12
+    - cron: '37 18 * * *'   # KST 03:37
+    - cron: '25 19 * * *'   # KST 04:25
+    - cron: '51 19 * * *'   # KST 04:51
+    - cron: '49 20 * * *'   # KST 05:49
+    - cron: '8 22 * * *'   # KST 07:08
+    - cron: '23 23 * * *'   # KST 08:23
+    - cron: '54 23 * * *'   # KST 08:54
+    - cron: '47 0 * * *'   # KST 09:47
+    - cron: '24 1 * * *'   # KST 10:24
+    - cron: '58 1 * * *'   # KST 10:58
+    - cron: '33 2 * * *'   # KST 11:33
+    - cron: '1 3 * * *'   # KST 12:01
+    - cron: '44 3 * * *'   # KST 12:44
+    - cron: '6 4 * * *'   # KST 13:06
+    - cron: '29 4 * * *'   # KST 13:29
+    - cron: '13 5 * * *'   # KST 14:13
+    - cron: '3 6 * * *'   # KST 15:03
+    - cron: '55 6 * * *'   # KST 15:55
+    - cron: '43 7 * * *'   # KST 16:43
+    - cron: '52 8 * * *'   # KST 17:52
+    - cron: '27 9 * * *'   # KST 18:27
+    - cron: '54 9 * * *'   # KST 18:54
+    - cron: '26 10 * * *'   # KST 19:26
+    - cron: '2 11 * * *'   # KST 20:02
+    - cron: '43 11 * * *'   # KST 20:43
+    - cron: '21 12 * * *'   # KST 21:21
+    - cron: '51 12 * * *'   # KST 21:51
+    - cron: '27 13 * * *'   # KST 22:27
+    - cron: '7 14 * * *'   # KST 23:07
+    - cron: '44 14 * * *'   # KST 23:44
   workflow_dispatch:
+    inputs:
+      manual_date:
+        description: '특정 일자 수동 분석 (YYYYMMDD, 비우면 자동 백필)'
+        required: false
+        default: ''
 
 jobs:
   run-monitor:
     runs-on: ubuntu-latest
-
+    concurrency:
+      group: monitor-run
+      cancel-in-progress: false
     steps:
     - name: 📂 소스 코드 가져오기
       uses: actions/checkout@v4
@@ -35,13 +73,9 @@ jobs:
 
     - name: 🌐 [진단] 이번 실행 서버 IP 확인
       run: |
-        echo "=================================================="
-        echo "이번 GitHub Actions 실행 서버의 IP 정보"
-        echo "=================================================="
-        curl -s --max-time 10 https://ipinfo.io/json | grep -E '"ip"|"city"|"country"|"org"' || echo "IP 조회 실패"
-        echo "=================================================="
+        curl -s --max-time 10 https://ipinfo.io/json | grep -E '"ip"|"country"|"org"' || echo "IP 조회 실패"
 
-    - name: "🚀 메인 스크립트 실행 (백필 - 안 되는 날은 즉시 종료, 다음 날 따라잡기)"
+    - name: "🚀 메인 스크립트 실행 (백필)"
       env:
         LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -49,7 +83,5 @@ jobs:
         GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
         DB_PATH: hrdk_law.db
-      run: |
-        # 백필 구조: main.py가 스스로 연결 확인 → 안 되면 종료(다음 날 자동 따라잡기).
-        # 5분 재시도 루프는 불필요해 제거 (IP 차단일에 시간 낭비 방지).
-        python main.py
+        MANUAL_DATE: ${{ github.event.inputs.manual_date }}
+      run: python main.py
