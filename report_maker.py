@@ -109,7 +109,13 @@ def send_webhook_with_file(fname, total, high, simple, target_date=TARGET_DATE):
     display_date = f"{target_date[:4]}년 {target_date[4:6]}월 {target_date[6:]}일"
     
     # 이제 Make.com은 "20260428"이 아니라 "2026년 04월 28일" 이라는 데이터를 받게 됩니다!
-    summary_data = {"date": display_date, "total": f"{total}건", "high": f"{high}건", "simple": f"{simple}건"}
+    # 🏷️ system/source: 두 시스템(RADAR/monitor)을 구분하는 식별값 (메일 제목 분기용)
+    summary_data = {
+        "system": "law-monitor",
+        "source": "monitor",
+        "subject": f"[law-monitor] {display_date} 개정법령 활용도 모니터링 (연관 {high}건)",
+        "date": display_date, "total": f"{total}건", "high": f"{high}건", "simple": f"{simple}건"
+    }
     try:
         if fname and os.path.exists(fname):
             with open(fname, 'rb') as f:
