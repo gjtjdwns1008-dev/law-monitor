@@ -224,12 +224,13 @@ def main():
         print("❌ 법제처 연결 불가 (오늘은 IP 차단일로 판단). 재시도 없이 종료합니다.")
         print("   → 밀린 날짜는 연결되는 다음 날 자동으로 따라잡습니다.")
         # 🌟 연결 실패도 총괄현황표에 기록 (통신 이력이 남도록)
+        # 🔑 단, '처리하려던 시행일자(=어제)' 행에 기록 → 성공 회차와 같은 행에 모임.
         from datetime import datetime, timedelta, timezone
-        kst_today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+        target_efyd = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime("%Y%m%d")
         try:
-            upload_to_google_sheet(0, [], [], target_date=kst_today,
+            upload_to_google_sheet(0, [], [], target_date=target_efyd,
                 status="🔴 법제처 연결 불가 (IP 차단 추정)",
-                log="오늘 연결 실패. 밀린 날짜는 다음 연결일에 백필됩니다.")
+                log="연결 실패(해당 시행일자 처리 대기). 밀린 날짜는 다음 연결일에 백필됩니다.")
         except Exception:
             pass
         sys.exit(1)
