@@ -223,10 +223,20 @@ def main():
     if not check_law_reachable(LAW_API_KEY):
         print("❌ 법제처 연결 불가 (오늘은 IP 차단일로 판단). 재시도 없이 종료합니다.")
         print("   → 밀린 날짜는 연결되는 다음 날 자동으로 따라잡습니다.")
-        # 🌟 연결 실패도 총괄현황표에 기록 (통신 이력이 남도록)
-        # 🔑 단, '처리하려던 시행일자(=어제)' 행에 기록 → 성공 회차와 같은 행에 모임.
         from datetime import datetime, timedelta, timezone
         target_efyd = (datetime.now(timezone(timedelta(hours=9))) - timedelta(days=1)).strftime("%Y%m%d")
+        # 🔑 이미 처리(성공)한 시행일자면 실패(🔴) 기록을 남기지 않는다.
+        #    (이미 🟢인 날에 연결 실패 🔴가 계속 덧붙는 것을 방지)
+        try:
+            from hrdk_law_core.sheets import read_last_success_date
+            from config import GCP_SA_JSON, GOOGLE_SHEET_ID
+            last_ok = read_last_success_date(GCP_SA_JSON, GOOGLE_SHEET_ID)
+            if last_ok and last_ok >= target_efyd:
+                print(f"ℹ️ {target_efyd}는 이미 처리 완료(마지막 성공일 {last_ok}) → 실패 기록 생략하고 종료.")
+                sys.exit(0)  # 처리할 게 없으므로 '실패'가 아님 → exit 0
+        except Exception:
+            pass  # 확인 실패 시엔 아래에서 평소대로 기록
+        # 🌟 아직 처리 안 된 시행일자만 연결 실패 이력 기록 (어제 행에 누적)
         try:
             upload_to_google_sheet(0, [], [], target_date=target_efyd,
                 status="🔴 법제처 연결 불가 (IP 차단 추정)",
