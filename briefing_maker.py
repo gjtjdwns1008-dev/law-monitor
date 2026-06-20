@@ -28,7 +28,6 @@ import re
 import json
 import time
 import requests
-import xml.etree.ElementTree as ET
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -63,7 +62,6 @@ TARGET_MONTH = os.environ.get("TARGET_MONTH", "").strip()  # 예: 202601
 GCP_SA_JSON = os.environ.get("GCP_SA_JSON")
 GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 WEBHOOK_URL = os.environ.get("BRIEFING_WEBHOOK_URL")  # 이슈브리핑 전용 웹훅 (monitor 일일 알림과 분리)
-LAW_API_KEY = os.environ.get("LAW_API_KEY", "")
 
 TOP_N = 5  # 이슈브리핑에 담을 핵심 법령 수 (기본 5건)
 
@@ -87,38 +85,63 @@ def norm_date(v):
 
 
 def fetch_month_data(target_month):
-    """구글 시트의 두 탭에서 target_month(YYYYMM)에 해당하는 행만 가져온다."""
+    """구글 시트에서 target_month(YYYYMM) 데이터를 가져온다.
+    반환: (high, simple, total_laws)
+      - high   : 활용 높은 법령 목록
+      - simple : 단순 관련 법령 목록
+      - total_laws : 그달 전체 시행 법령 수 (총괄현황표의 '총 검토건수' 합계)
+
+    ※ 법제처 API를 따로 부르지 않는다.
+      monitor가 매일 검토하며 총괄현황표에 쌓아둔 '총 검토건수'가 곧 전체 시행 법령 수다.
+      (구글 시트가 우리의 영구 스토리지이므로, 모든 통계를 여기서 가져온다.)
+    """
     print(f"📥 [1단계] 구글 시트에서 {target_month} 데이터 호출 중...")
     # get_sheet_client는 (client, spreadsheet) 튜플 반환 → 두 번째만 사용
     _, ss = get_sheet_client(GCP_SA_JSON, GOOGLE_SHEET_ID)
 
     def pull(tab_name):
         records = ss.worksheet(tab_name).get_all_records()
-        out = []
-        for r in records:
-            if norm_date(r.get("시행일자", "")).startswith(target_month):
-                out.append(r)
-        return out
+        return [r for r in records
+                if norm_date(r.get("시행일자", "")).startswith(target_month)]
 
     high = pull(SHEET_HIGH)
     simple = pull(SHEET_SIMPLE)
-    print(f"   → 활용 높은 법령 {len(high)}건 / 단순 관련 {len(simple)}건")
-    return high, simple
+
+    # 총괄현황표에서 그달 '총 검토건수' 합계 = 전체 시행 법령 수
+    total_laws = sum_total_reviewed(ss, target_month)
+
+    print(f"   → 전체 시행 {total_laws}건 / 활용 높은 {len(high)}건 / 단순 관련 {len(simple)}건")
+    return high, simple, total_laws
 
 
-def get_total_law_count(target_month):
-    """법제처 API로 그달 전체 시행 법령 수 조회 (통계용). 실패해도 진행."""
-    if not LAW_API_KEY:
-        return None
-    start = f"{target_month}01"
-    url = (f"https://www.law.go.kr/DRF/lawSearch.do?OC={LAW_API_KEY}"
-           f"&target=law&type=XML&efYd={start}~{target_month}31&display=1")
+def sum_total_reviewed(ss, target_month):
+    """총괄현황표에서 target_month(YYYYMM)에 해당하는 '총 검토건수'를 모두 더한다.
+    이 값이 곧 그달 전체 시행(검토 대상) 법령 수다. 실패 시 None."""
     try:
-        res = requests.get(url, timeout=15)
-        root = ET.fromstring(res.text)
-        return root.findtext(".//totalCnt", None)
-    except Exception:
+        records = ss.worksheet("총괄현황표").get_all_records()
+    except Exception as e:
+        print(f"   ⚠️ 총괄현황표 읽기 실패: {e}")
         return None
+
+    # '총 검토건수' 칸 이름이 다를 수 있어 후보를 둔다 (헤더 표기 차이 대응)
+    count_keys = ["총 검토건수", "총검토건수", "총 검토 건수"]
+    total = 0
+    found = False
+    for r in records:
+        # 날짜 칸도 표기 차이 대응 (시행일자/수집일자)
+        date_val = r.get("시행일자") or r.get("수집일자") or ""
+        if not norm_date(date_val).startswith(target_month):
+            continue
+        # 총 검토건수 칸 찾기
+        for k in count_keys:
+            if k in r:
+                try:
+                    total += int(float(r[k] or 0))
+                    found = True
+                except (ValueError, TypeError):
+                    pass
+                break
+    return total if found else None
 
 
 # ============================================================
@@ -330,13 +353,21 @@ def build_briefing_docx(target_month, total_laws, related_count,
     _run(p, f"〈{year}년 {month}월호〉", size=13, color=GRAY, bold=True)
     _add_bottom_border(p, NAVY)
 
+    # 전체 시행 법령 수 표시용 (총괄현황표에서 못 읽으면 None)
+    has_total = bool(total_laws) and total_laws > related_count
+    total_str = f"{total_laws}건" if has_total else None
+
     # --- 개요 ---
     p = doc.add_paragraph(); _run(p, "■ 개요", size=12, color=BLUE, bold=True)
-    for label, val in [
+    overview = [
         ("조사기간", f"{year}년 {month}월 1일 ~ {month}월 말일"),
-        ("조사대상", f"{month}월 시행 법령 총 {total_laws}건"),
-        ("주요내용", f"자격 활용도 변동 {len(issues)}개 핵심 사례"),
-    ]:
+    ]
+    if has_total:
+        overview.append(("조사대상", f"{month}월 시행 법령 총 {total_str} (국가기술자격 관련 {related_count}건)"))
+    else:
+        overview.append(("조사대상", f"{month}월 시행 국가기술자격 관련 법령 {related_count}건"))
+    overview.append(("주요내용", f"자격 활용도 변동 {len(issues)}개 핵심 사례"))
+    for label, val in overview:
         p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
         _run(p, f"✓ {label} : ", size=10.5, color=NAVY, bold=True)
         _run(p, val, size=10.5)
@@ -344,11 +375,18 @@ def build_briefing_docx(target_month, total_laws, related_count,
     # --- 모니터링 요약 ---
     p = doc.add_paragraph(); _run(p, "■ 모니터링 요약", size=12, color=BLUE, bold=True)
     p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
-    _run(p, f"· {month}월 전체 시행 법령 ", size=10.5)
-    _run(p, f"{total_laws}건", size=10.5, color=NAVY, bold=True)
-    _run(p, " 중, 국가기술자격 관련 법령은 ", size=10.5)
-    _run(p, f"{related_count}건", size=10.5, color=NAVY, bold=True)
-    _run(p, "으로 조사", size=10.5)
+    if has_total:
+        # 전체 수를 아는 경우: "전체 N건 중, 관련 M건"
+        _run(p, f"· {month}월 전체 시행 법령 ", size=10.5)
+        _run(p, total_str, size=10.5, color=NAVY, bold=True)
+        _run(p, " 중, 국가기술자격 관련 법령은 ", size=10.5)
+        _run(p, f"{related_count}건", size=10.5, color=NAVY, bold=True)
+        _run(p, "으로 조사", size=10.5)
+    else:
+        # 전체 수를 모르는 경우: 관련 법령 수만
+        _run(p, f"· {month}월 국가기술자격 관련 법령은 ", size=10.5)
+        _run(p, f"{related_count}건", size=10.5, color=NAVY, bold=True)
+        _run(p, "으로 조사", size=10.5)
     p = doc.add_paragraph(); p.paragraph_format.left_indent = Cm(0.4)
     _run(p, "· 그중 자격 활용도가 ", size=10.5)
     _run(p, "대폭 증가", size=10.5, color=RGBColor(0xC5, 0x5A, 0x11), bold=True)
@@ -524,16 +562,18 @@ def build_monitor_xlsx(target_month, total_laws, high, simple, out_path):
     ws["A1"].font = XLFont(name=FONT, bold=True, size=14, color=XLNAVY)
     ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 30
+    related_total = len(high) + len(simple)
+    has_total = bool(total_laws) and total_laws > related_total
     ws.merge_cells("A2:C2")
-    total_label = f"총 {total_laws}건" if total_laws else "집계 중"
+    total_label = f"총 {total_laws}건" if has_total else f"국가기술자격 관련 {related_total}건"
     ws["A2"] = f"※ {YM} 시행 법령 : {total_label}"
     ws["A2"].font = XLFont(name=FONT, size=10, color=HGRAY)
 
     util = Counter(r.get("활용도 분석 구분", "") for r in high)
     stats = [
         ("구분", "건수", "비고", True),
-        ("총 시행 법령", total_laws or "-", "당월 시행된 전체 법령", False),
-        ("국가기술자격 관계 법령", len(high) + len(simple), "자격 관련 있는 법령 (아래 합계)", False),
+        ("총 시행 법령", total_laws if has_total else "-", "당월 시행된 전체 법령", False),
+        ("국가기술자격 관계 법령", related_total, "자격 관련 있는 법령 (아래 합계)", False),
         ("  ① 활용·관련 높은 법령", len(high), "자격 활용도에 영향", False),
         ("      · 대폭 증가", util.get("대폭 증가", 0), "자격 수요 크게 증가", False),
         ("      · 소폭 증가", util.get("소폭 증가", 0), "자격 수요 소폭 증가", False),
@@ -669,12 +709,11 @@ def main():
 
     print(f"🚀 {TARGET_MONTH} 이슈브리핑 생성 시작\n" + "=" * 50)
 
-    # 1) 데이터
-    high, simple = fetch_month_data(TARGET_MONTH)
+    # 1) 데이터 (전체 시행 법령 수도 총괄현황표에서 함께 가져옴)
+    high, simple, total_laws = fetch_month_data(TARGET_MONTH)
     if not high and not simple:
         raise SystemExit(f"❌ {TARGET_MONTH} 데이터가 시트에 없습니다.")
 
-    total_laws = get_total_law_count(TARGET_MONTH) or (len(high) + len(simple))
     related_count = len(high) + len(simple)
     util = Counter(r.get("활용도 분석 구분", "") for r in high)
     big_increase = util.get("대폭 증가", 0) + util.get("대폭 감소", 0)
