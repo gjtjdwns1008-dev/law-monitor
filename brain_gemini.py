@@ -2,6 +2,25 @@ import json
 import re
 from hrdk_law_core.llm_client import get_llm_client
 
+
+def _normalize_category(raw: str) -> str:
+    """AI가 뱉은 '분류' 값을 3개 정식값으로 교정.
+    정식값: 연관높음 / 단순관련 / 일반
+    (AI가 가끔 글자를 빠뜨리거나 중복하는 디코딩 오류 대응)
+    """
+    if not raw:
+        return "일반"
+    s = str(raw).strip().replace(" ", "")
+    if s in ("연관높음", "단순관련", "일반"):
+        return s
+    # 우선순위: 구체적인 것부터 (연관높음 > 단순관련 > 일반)
+    if "연관" in s or "높" in s:
+        return "연관높음"
+    if "단순" in s or "관련" in s:
+        return "단순관련"
+    return "일반"  # 그 외(일반, 해당없음류, 깨진 값)는 안전하게 일반
+
+
 # 🌟 [모델 추상화] Gemini 직접 호출 대신 통역 창구 사용. LLM_PROVIDER로 모델 교체 가능.
 _llm = None
 def _client():
@@ -166,7 +185,7 @@ def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
                 "검토 사유": data.get("검토사유", ""),
                 "조문별 다이렉트 링크": links_str
             }
-            return True, data.get("분류", ""), law_info
+            return True, _normalize_category(data.get("분류", "")), law_info
 
     except Exception as e:
         return False, "", {"error": str(e)}
