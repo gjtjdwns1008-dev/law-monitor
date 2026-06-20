@@ -27,6 +27,7 @@ import io
 import re
 import json
 import time
+import calendar
 import requests
 import matplotlib
 matplotlib.use("Agg")
@@ -148,7 +149,7 @@ def sum_total_reviewed(ss, target_month):
 # [2] Gemini 3단계 호출
 # ============================================================
 def _ask(prompt, temperature=0.2, retries=3):
-    """Gemini 호출 + 재시도. 코어의 llm_client 사용."""
+    """Gemini 호출 + 재시도. 코어의 llm_client 사용 (웹검색 없음)."""
     llm = get_llm_client()
     for attempt in range(retries):
         try:
@@ -157,6 +158,54 @@ def _ask(prompt, temperature=0.2, retries=3):
             print(f"   ⚠️ AI 호출 실패({attempt+1}/{retries}): {e}")
             time.sleep(10)
     return ""
+
+
+# 웹검색(grounding) 사용 가능 여부 — 환경변수로 켜고 끔 (기본: 켜기)
+USE_WEB_SEARCH = os.environ.get("USE_WEB_SEARCH", "true").lower() in ("true", "1", "yes")
+
+
+def _ask_with_search(prompt, temperature=0.2):
+    """웹검색(Google Search grounding)을 켜서 Gemini 호출.
+    상세분석처럼 '법령의 실제 내용'을 풍부하게 써야 할 때 사용.
+
+    - 코어(llm_client)는 건드리지 않고, 여기서 직접 Gemini를 호출한다.
+      (코어는 monitor/RADAR 공용이라 검색 기능을 함부로 넣지 않음)
+    - 검색이 안 되거나 실패하면 일반 호출(_ask)로 자동 폴백한다.
+      → 검색이 되면 더 자세하게, 안 되면 최소한 시트 기반으로는 나온다.
+    """
+    if not USE_WEB_SEARCH:
+        return _ask(prompt, temperature=temperature)
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    model = os.environ.get("LLM_MODEL", "") or "gemini-3.5-flash"
+    if not api_key:
+        return _ask(prompt, temperature=temperature)
+
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        # Google Search 도구 활성화
+        search_tool = types.Tool(google_search=types.GoogleSearch())
+        resp = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                tools=[search_tool],
+                max_output_tokens=8192,
+            ),
+        )
+        text = (resp.text or "").strip()
+        if text:
+            return text
+        # 빈 응답이면 폴백
+        print("   ℹ️ 웹검색 응답이 비어 일반 호출로 폴백")
+        return _ask(prompt, temperature=temperature)
+    except Exception as e:
+        # 검색 미지원 모델·쿼터·기타 오류 → 일반 호출로 폴백
+        print(f"   ℹ️ 웹검색 사용 불가({str(e)[:40]}) → 일반 호출로 폴백")
+        return _ask(prompt, temperature=temperature)
 
 
 def select_top_laws(big_laws, top_n=TOP_N):
@@ -223,7 +272,7 @@ def make_details(selected):
             summary=r.get("주요 제·개정내용", ""),
             util_detail=r.get("활용도 분석 상세", ""),
         )
-        raw = _ask(prompt, temperature=0.2)
+        raw = _ask_with_search(prompt, temperature=0.2)
         data = _parse_detail_json(raw)
         merged = dict(r)
         merged["impact_3lines"] = data.get("impact_3lines", [])
@@ -236,7 +285,7 @@ def make_details(selected):
 
 
 def _parse_detail_json(raw):
-    """AI 응답에서 JSON 객체 추출 (```json 펜스, 줄바꿈 등 정리)."""
+    """AI 응답에서 JSON 객체 추출 (```json 펜스, 줄바꿈, 웹검색 인용표시 정리)."""
     if not raw:
         return {}
     s = raw.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
@@ -245,9 +294,25 @@ def _parse_detail_json(raw):
     if not match:
         return {}
     try:
-        return json.loads(match.group(0))
+        data = json.loads(match.group(0))
     except Exception:
         return {}
+    # 웹검색 시 붙을 수 있는 인용 표시([1], [2] 등) 제거
+    data = {k: _clean_citations(v) for k, v in data.items()}
+    return data
+
+
+def _clean_citations(value):
+    """문자열/리스트에서 [1], [2,3] 같은 각주 인용 표시를 제거."""
+    def clean(s):
+        if not isinstance(s, str):
+            return s
+        # [1], [1, 2], [출처] 등 대괄호 인용 제거
+        s = re.sub(r"\s*\[\d+(?:\s*,\s*\d+)*\]", "", s)
+        return s.strip()
+    if isinstance(value, list):
+        return [clean(x) for x in value]
+    return clean(value)
 
 
 # ============================================================
@@ -299,6 +364,63 @@ def make_chart(high, out_path):
     plt.close()
 
 
+# 분야 분류용 키워드 (자격 종목명에 포함된 단어로 분야 판별)
+FIELD_KEYWORDS = {
+    "건설·건축": ["건축", "토목", "건설", "조경", "도시계획", "측량", "지적"],
+    "전기·전자": ["전기", "전자", "반도체", "정보통신", "정보처리", "임베디드", "전파"],
+    "기계": ["기계", "금형", "용접", "자동차", "차량", "항공", "조선", "철도차량"],
+    "환경·에너지": ["환경", "대기", "수질", "폐기물", "에너지", "신재생", "가스", "원자력", "기상"],
+    "화학·재료": ["화공", "화학", "금속", "재료", "세라믹", "섬유", "위험물"],
+    "농림·수산": ["산림", "농화학", "수산", "축산", "시설원예", "종자", "어업", "조경"],
+    "IT·디지털": ["정보관리", "컴퓨터", "빅데이터", "인공지능", "정보보안"],
+    "안전·소방": ["안전", "소방", "방재", "재난", "비파괴"],
+}
+
+
+def classify_field(cert_string):
+    """자격 종목 문자열에서 가장 많이 매칭되는 분야를 반환. 없으면 '기타'."""
+    certs = str(cert_string)
+    scores = {field: sum(certs.count(kw) for kw in kws)
+              for field, kws in FIELD_KEYWORDS.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "기타"
+
+
+def make_field_chart(high, out_path):
+    """분야별 분포 가로 막대 차트 (자격 종목 키워드 기반)."""
+    print("📊 [3-2] 분야별 분포 차트 생성 중...")
+    fm = _korean_font()
+    if fm:
+        plt.rcParams["font.family"] = fm.get_name()
+    plt.rcParams["axes.unicode_minus"] = False
+
+    field_counts = Counter(classify_field(r.get("법령 관련 국가기술자격 종목", "")) for r in high)
+    # 많은 순 정렬 (가로 막대는 아래→위라 역순으로)
+    items = field_counts.most_common()
+    labels = [x[0] for x in items][::-1]
+    values = [x[1] for x in items][::-1]
+
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+    bars = ax.barh(labels, values, color="#0F6E56", height=0.6)
+    ax.set_xlabel("관련 법령 건수", fontproperties=fm, fontsize=11)
+    ax.set_title("자격 분야별 관련 법령 분포",
+                 fontproperties=fm, fontsize=13, fontweight="bold", pad=12)
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w, bar.get_y() + bar.get_height() / 2, f" {int(w)}건",
+                ha="left", va="center", fontproperties=fm, fontsize=9, fontweight="bold")
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontproperties=fm, fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="x", linestyle="--", alpha=0.4)
+    if values:
+        ax.set_xlim(0, max(values) * 1.15)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
 # ============================================================
 # [3-B] 이슈브리핑 docx 생성 — 우리가 디자인한 그대로
 # ============================================================
@@ -324,7 +446,8 @@ def _run(p, text, size=11, color=None, bold=False, italic=False):
 
 
 def build_briefing_docx(target_month, total_laws, related_count,
-                        big_increase, foreword, issues, chart_path, out_path):
+                        big_increase, foreword, issues, chart_path, out_path,
+                        field_chart_path=None):
     print("📄 [4-1] 이슈브리핑 docx 생성 중...")
     year, month = target_month[:4], str(int(target_month[4:6]))
     doc = Document()
@@ -359,8 +482,10 @@ def build_briefing_docx(target_month, total_laws, related_count,
 
     # --- 개요 ---
     p = doc.add_paragraph(); _run(p, "■ 개요", size=12, color=BLUE, bold=True)
+    # 그달 마지막 날 계산 (1월=31, 2월=28/29 등)
+    last_day = calendar.monthrange(int(year), int(month))[1]
     overview = [
-        ("조사기간", f"{year}년 {month}월 1일 ~ {month}월 말일"),
+        ("조사기간", f"{year}년 {month}월 1일 ~ {month}월 {last_day}일"),
     ]
     if has_total:
         overview.append(("조사대상", f"{month}월 시행 법령 총 {total_str} (국가기술자격 관련 {related_count}건)"))
@@ -400,11 +525,14 @@ def build_briefing_docx(target_month, total_laws, related_count,
     _shade_paragraph(p, "F2F2F2")
     _add_left_border(p, BLUE)
 
-    # --- 차트 ---
+    # --- 차트 (부처별 + 분야별) ---
     h = doc.add_paragraph(); _run(h, "데이터 시각화 분석", size=13, color=NAVY, bold=True)
     if os.path.exists(chart_path):
         p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.add_run().add_picture(chart_path, width=Cm(12.5))
+    if field_chart_path and os.path.exists(field_chart_path):
+        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.add_run().add_picture(field_chart_path, width=Cm(12.5))
 
     # --- 페이지 나눔 → 요약표 ---
     doc.add_page_break()
@@ -727,11 +855,14 @@ def main():
     # 3) 차트 + 두 산출물
     chart_path = "/tmp/chart.png"
     make_chart(high, chart_path)
+    field_chart_path = "/tmp/field_chart.png"
+    make_field_chart(high, field_chart_path)
 
     docx_path = f"/tmp/이슈브리핑_{TARGET_MONTH}.docx"
     xlsx_path = f"/tmp/모니터링결과_{TARGET_MONTH}.xlsx"
     build_briefing_docx(TARGET_MONTH, total_laws, related_count, big_increase,
-                        foreword, issues, chart_path, docx_path)
+                        foreword, issues, chart_path, docx_path,
+                        field_chart_path=field_chart_path)
     build_monitor_xlsx(TARGET_MONTH, total_laws, high, simple, xlsx_path)
 
     # GitHub Actions가 가져갈 수 있게 현재 폴더에도 복사
