@@ -59,7 +59,26 @@ from openpyxl.utils import get_column_letter
 # ============================================================
 # 설정값
 # ============================================================
+def _last_month():
+    """오늘 기준 '지난달'을 YYYYMM으로 반환. (자동 실행 시 사용)
+    매달 2일에 돌면 지난달 보고서를 만든다. 연초(1월)엔 작년 12월로 넘어간다.
+    예: 오늘이 2026-02-02 → '202601' / 2026-01-02 → '202512'
+    """
+    from datetime import datetime, timezone, timedelta
+    # GitHub Actions는 UTC로 돈다. 한국 날짜 기준으로 '지난달'을 정확히 잡기 위해
+    # KST(UTC+9)로 변환한 뒤 계산한다.
+    now_kst = datetime.now(timezone.utc) + timedelta(hours=9)
+    year, month = now_kst.year, now_kst.month
+    if month == 1:
+        return f"{year - 1}12"
+    return f"{year}{month - 1:02d}"
+
+
+# TARGET_MONTH: 수동 입력값이 있으면 그걸 쓰고, 없으면(자동 실행) 지난달.
 TARGET_MONTH = os.environ.get("TARGET_MONTH", "").strip()  # 예: 202601
+if not TARGET_MONTH:
+    TARGET_MONTH = _last_month()
+    print(f"ℹ️ TARGET_MONTH 미입력 → 자동으로 지난달({TARGET_MONTH}) 생성")
 GCP_SA_JSON = os.environ.get("GCP_SA_JSON")
 GOOGLE_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID")
 WEBHOOK_URL = os.environ.get("BRIEFING_WEBHOOK_URL")  # 이슈브리핑 전용 웹훅 (monitor 일일 알림과 분리)
@@ -832,8 +851,8 @@ def send_via_webhook(target_month, docx_path, xlsx_path, stats):
 # 메인
 # ============================================================
 def main():
-    if not TARGET_MONTH or len(TARGET_MONTH) != 6:
-        raise SystemExit("❌ TARGET_MONTH(YYYYMM)이 필요합니다. 예: 202601")
+    if not TARGET_MONTH or len(TARGET_MONTH) != 6 or not TARGET_MONTH.isdigit():
+        raise SystemExit("❌ TARGET_MONTH는 6자리 숫자(YYYYMM)여야 합니다. 예: 202601")
 
     print(f"🚀 {TARGET_MONTH} 이슈브리핑 생성 시작\n" + "=" * 50)
 
