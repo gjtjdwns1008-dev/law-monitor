@@ -2,27 +2,34 @@
 # 월별 이슈브리핑 + 모니터링 결과 자동 생성 워크플로우
 # =====================================================================
 # [사용법]
-#   GitHub 저장소 → Actions 탭 → "이슈브리핑 생성" 선택
-#   → "Run workflow" 클릭 → 월(예: 202601) 입력 → 실행
+#   ▶ 자동: 매달 2일 오전 9시(KST)에 지난달 보고서가 자동 생성·발송됩니다.
+#   ▶ 수동: Actions 탭 → "이슈브리핑 생성" → Run workflow → (선택) 월 입력 → 실행
+#           월을 비워두면 '지난달'이 자동 선택됩니다.
 #   → 1~2분 후 생성된 보고서가 메일로 발송됨 (Make.com 웹훅)
 #   → (백업) Actions 실행 페이지 하단 "Artifacts"에서도 다운로드 가능
 #
 # [필요한 GitHub Secrets] (Settings → Secrets and variables → Actions)
 #   GCP_SA_JSON, GOOGLE_SHEET_ID, GEMINI_API_KEY, BRIEFING_WEBHOOK_URL
-#   (LAW_API_KEY는 선택 — 전체 시행건수 통계용)
+#   ※ 전체 시행 법령 수는 총괄현황표의 '총 검토건수'에서 가져오므로 법제처 API 불필요.
 #   ※ BRIEFING_WEBHOOK_URL은 monitor 일일 알림과 분리된 '새 웹훅'입니다.
 # =====================================================================
 
 name: 이슈브리핑 생성
 
-# 수동 실행만 (자동 스케줄 없음). 월 입력을 받는다.
 on:
+  # ① 자동 실행: 매달 2일 오전 9시(KST)
+  #    GitHub Actions는 UTC 기준이므로, KST 09:00 = UTC 00:00 (전날 -9시간이 아니라
+  #    같은 날 자정). cron은 "분 시 일 월 요일" 순서. 아래는 매월 2일 00:00 UTC.
+  schedule:
+    - cron: "0 0 2 * *"
+  # ② 수동 실행: 월 입력 (비워두면 지난달 자동 선택)
   workflow_dispatch:
     inputs:
       target_month:
-        description: "생성할 월 (YYYYMM 형식, 예: 202601)"
-        required: true
+        description: "생성할 월 (YYYYMM, 예: 202601). 비우면 지난달 자동."
+        required: false
         type: string
+        default: ""
 
 jobs:
   build-briefing:
@@ -68,11 +75,14 @@ jobs:
           GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
           BRIEFING_WEBHOOK_URL: ${{ secrets.BRIEFING_WEBHOOK_URL }}
           OUTPUT_DIR: "output"
-          # 모델 교체하고 싶으면 아래 주석 해제 (기본: 코어 기본값)
-          # LLM_MODEL: "gemini-2.5-pro"
+          # 웹검색(상세분석 자세히): true=켜기(기본), false=끄기
+          # 검색이 안 되거나 실패하면 자동으로 시트 기반 작성으로 폴백됩니다.
+          USE_WEB_SEARCH: "true"
+          # 모델 지정 (웹검색은 gemini-2.5 계열에서 더 안정적).
+          # 주석을 풀어 모델을 고정할 수 있습니다.
+          # LLM_MODEL: "gemini-2.5-flash"
         run: |
           python briefing_maker.py
 
@@ -81,7 +91,9 @@ jobs:
         if: always()  # 실패해도 일단 생성된 게 있으면 올림
         uses: actions/upload-artifact@v4
         with:
-          name: 이슈브리핑-${{ github.event.inputs.target_month }}
+          # 자동 실행 땐 입력값이 비므로, 실행 날짜·번호로 이름을 짓는다.
+          # (실제 파일명에는 대상 월이 들어가 있어 zip 안에서 구분 가능)
+          name: 이슈브리핑-run${{ github.run_number }}
           path: output/*
           retention-days: 30
           if-no-files-found: warn
