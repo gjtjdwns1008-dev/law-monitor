@@ -34,6 +34,12 @@ def process_one_day(target_date: str, kb, run_note: str = "",
     """
     print(f"\n{'='*50}\n📅 [{target_date}] 처리 시작\n{'='*50}")
 
+    # 종목 명단 기준 연도 = 이 법령의 시행일자 연도 (B안). 연도별 csv 자동 선택에 사용.
+    _cert_year = None
+    _digits = "".join(ch for ch in str(target_date or "") if ch.isdigit())
+    if len(_digits) >= 4:
+        _cert_year = int(_digits[:4])
+
     if prefetched_laws is not None:
         laws = prefetched_laws
         print(f"  📂 [{target_date}] 저장된 스크랩 사용 ({len(laws)}건) — 법제처 재호출 안 함")
@@ -73,7 +79,7 @@ def process_one_day(target_date: str, kb, run_note: str = "",
                 print(f"      ⚠️ 보류 로그 기록 실패: {he}")
             continue
 
-        certs_text = get_relevant_certs_text(law.get("원본", ""), group_by_field=True)
+        certs_text = get_relevant_certs_text(law.get("원본", ""), group_by_field=True, year=_cert_year)
         success, classification, law_info = run_ai_analysis(law, certs_text)
         elapsed = time.time() - t0
 
@@ -96,7 +102,7 @@ def process_one_day(target_date: str, kb, run_note: str = "",
         time.sleep(20)
         for law in failed_queue:
             print(f"  [재시도] {law['법령명']}... ", end="", flush=True)
-            certs_text = get_relevant_certs_text(law.get("원본", ""), group_by_field=True)
+            certs_text = get_relevant_certs_text(law.get("원본", ""), group_by_field=True, year=_cert_year)
             success, classification, law_info = run_ai_analysis(law, certs_text, attempt_count=3)
             if success:
                 if classification == "연관높음":
