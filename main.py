@@ -22,6 +22,7 @@ from hrdk_law_core.backfill import check_law_reachable, pending_dates, mark_done
 
 from brain_gemini import run_ai_analysis
 from report_maker import upload_to_google_sheet, create_excel_report, send_webhook_with_file
+from report_maker import ensure_update_sheet_exists, run_name_updates
 
 
 def process_one_day(target_date: str, kb, run_note: str = "",
@@ -198,6 +199,15 @@ def main():
 
     kb = KnowledgeBase(DB_PATH)
     print(f"📚 지식베이스 로드 완료 ({DB_PATH})")
+
+    # ── [매 실행] 자격명칭최신화: 자격 명칭변경을 대장(연관높음/단순관련)에 반영 ──
+    #    · 명칭 교체만(구→신). 폐지/통합이어도 자격은 유효하므로 삭제하지 않음.
+    #    · 변경시점 지난 미적용 지시만, 처리 후 적용여부=완료 표시(1회성)
+    ensure_update_sheet_exists()
+    try:
+        run_name_updates()
+    except Exception as e:
+        print(f"  ⚠️ 자격명칭최신화 처리 실패: {e}")
 
     # ── [수동 실행 모드] 특정 일자만 처리 (연결 확인보다 먼저 — 대상 날짜를 알아야 함) ──
     manual_date = os.environ.get("MANUAL_DATE", "").strip()
