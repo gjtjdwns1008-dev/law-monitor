@@ -49,9 +49,9 @@ def generate_new_law_link(law_name, enforce_date, prom_num, prom_date, article_n
 def run_ai_analysis(law, qnet_certs_text, attempt_count=5):
     prompt = f"""
     당신은 '한국산업인력공단(HRDK)'의 국가기술자격 정책 수석 연구원입니다.
-    아래 [최신 법령 원본]을 읽고, [국가기술자격 491개 종목 사전] 중 어떤 종목에 영향을 미치는지 분석하십시오.
+    아래 [최신 법령 원본]을 읽고, [국가기술자격 종목 사전] 중 어떤 종목에 영향을 미치는지 분석하십시오.
 
-    [국가기술자격 491개 종목 사전]
+    [국가기술자격 종목 사전]
     {qnet_certs_text}
 
     [최신 법령 제·개정 내용 (마크다운)]
