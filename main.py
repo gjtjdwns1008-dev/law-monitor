@@ -22,7 +22,7 @@ from hrdk_law_core.backfill import check_law_reachable, pending_dates, mark_done
 
 from brain_gemini import run_ai_analysis
 from report_maker import upload_to_google_sheet, create_excel_report, send_webhook_with_file
-from report_maker import ensure_update_sheet_exists, run_name_updates
+from report_maker import ensure_update_sheet_exists, run_name_updates, read_all_aliases_for_resolve
 
 
 def process_one_day(target_date: str, kb, run_note: str = "",
@@ -204,6 +204,16 @@ def main():
     #    · 명칭 교체만(구→신). 폐지/통합이어도 자격은 유효하므로 삭제하지 않음.
     #    · 변경시점 지난 미적용 지시만, 처리 후 적용여부=완료 표시(1회성)
     ensure_update_sheet_exists()
+    # (A) 분석 변환용: 자격명칭최신화 탭의 모든 발효 별칭(완료 포함)을 core에 주입
+    try:
+        from hrdk_law_core.certs import register_alias_overrides
+        _aliases = read_all_aliases_for_resolve()
+        if _aliases:
+            register_alias_overrides(_aliases)
+            print(f"  🔤 분석 변환용 별칭 {len(_aliases)}건 주입")
+    except Exception as e:
+        print(f"  ⚠️ 별칭 주입 실패: {e}")
+    # (B) 대장 소급 수정
     try:
         run_name_updates()
     except Exception as e:

@@ -322,3 +322,48 @@ def run_name_updates():
     if not preview:
         mark_update_applied(row_nums)
         print(f"    • 지시 {len(row_nums)}건 '완료' 표시 (총 {total_changed}행 변경)")
+
+
+def read_all_aliases_for_resolve():
+    """
+    자격명칭최신화 탭에서 '분석 변환용' 별칭 전부({구명칭: 신명칭}).
+      · 적용여부=완료 인 것도 포함(과거 이관분도 변환엔 계속 사용)
+      · 변경시점이 미래인 것만 제외
+      · 예시행/구분줄 위쪽 건너뜀
+    """
+    if not GCP_SA_JSON or not GOOGLE_SHEET_ID:
+        return {}
+    try:
+        ss = _sheet()
+        ws = ss.worksheet(UPDATE_SHEET_NAME)
+        values = ws.get_all_values()
+        if len(values) <= 1:
+            return {}
+        header = values[0]
+        idx = {h: i for i, h in enumerate(header)}
+        def cell(row, name):
+            i = idx.get(name)
+            return (row[i].strip() if (i is not None and i < len(row)) else "")
+        start = 1
+        for r_i, row in enumerate(values[1:], start=1):
+            gu = cell(row, "구명칭"); bigo = cell(row, "비고")
+            if gu.startswith("[예시]") or "실제 입력은" in bigo or "═══" in bigo:
+                start = r_i + 1
+        from datetime import datetime, timezone, timedelta
+        today_digits = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+        out = {}
+        for r_i in range(start, len(values)):
+            row = values[r_i]
+            gu = cell(row, "구명칭"); sin = cell(row, "신명칭"); when = cell(row, "변경시점")
+            if not gu or not sin or gu == sin:
+                continue
+            wd = "".join(ch for ch in when if ch.isdigit())[:8]
+            if wd and len(wd) == 8 and wd > today_digits:
+                continue
+            out[gu] = sin
+        return out
+    except gspread.WorksheetNotFound:
+        return {}
+    except Exception as e:
+        print(f"  ⚠️ 자격명칭최신화(변환용) 읽기 실패: {e}")
+        return {}
